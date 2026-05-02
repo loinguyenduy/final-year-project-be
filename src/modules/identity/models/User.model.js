@@ -20,6 +20,7 @@ const User = sequelize.define(
       allowNull: false,
     },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+    avatar_url: { type: DataTypes.STRING(255), allowNull: true },
   },
   { timestamps: true },
 );

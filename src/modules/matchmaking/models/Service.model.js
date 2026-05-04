@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const Service = sequelize.define('Service', {
+const Service = db.define('Service', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     service_code: { type: DataTypes.STRING(50), unique: true, allowNull: false },
     name: { type: DataTypes.STRING(100), allowNull: false },

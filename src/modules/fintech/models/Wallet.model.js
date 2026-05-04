@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const Wallet = sequelize.define('Wallet', {
+const Wallet = db.define('Wallet', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     wallet_type: { type: DataTypes.ENUM('CUSTOMER_MAIN', 'HANDYMAN_MAIN', 'HANDYMAN_ESCROW', 'SYSTEM_PROFIT', 'SYSTEM_ESCROW'), allowNull: false },
     balance: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0.00 },

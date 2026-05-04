@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const Job = sequelize.define('Job', {
+const Job = db.define('Job', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     issue_description: { type: DataTypes.TEXT, allowNull: false },
     ai_price_min: { type: DataTypes.DECIMAL(12, 2) },

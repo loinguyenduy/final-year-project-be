@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const UserAddress = sequelize.define('User_Address', {
+const UserAddress = db.define('User_Address', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     address_line: { type: DataTypes.TEXT, allowNull: false },
     gps_lat: { type: DataTypes.DECIMAL(10, 8) },

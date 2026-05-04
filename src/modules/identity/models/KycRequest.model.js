@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const KycRequest = sequelize.define('KYC_Request', {
+const KycRequest = db.define('KYC_Request', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     document_type: { type: DataTypes.ENUM('CCCD_FRONT', 'CCCD_BACK', 'SELFIE', 'CERTIFICATE', 'CV'), allowNull: false },
     document_url: { type: DataTypes.TEXT, allowNull: false },

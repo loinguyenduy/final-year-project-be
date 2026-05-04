@@ -1,4 +1,9 @@
-import { handleRegisterUser, handleLoginUser, handleRefreshToken, handleLogout } from "../services/Auth.service.js";
+import {
+  handleRegisterUser,
+  handleLoginUser,
+  handleRefreshToken,
+  handleLogout,
+} from "../services/Auth.service.js";
 
 const registerNewUser = async (req, res) => {
   try {
@@ -21,7 +26,7 @@ const registerNewUser = async (req, res) => {
     }
 
     let data = await handleRegisterUser(req.body);
-    
+
     return res.status(data.EC === 0 ? 200 : data.EC).json({
       EM: data.EM,
       EC: data.EC,
@@ -54,9 +59,9 @@ const loginUser = async (req, res) => {
     if (data && data.EC === 0) {
       res.cookie("refreshToken", data.DT.refresh_token, {
         httpOnly: true, // set HttpOnly flag to prevent client-side JS access
-        secure: false, 
+        secure: false,
         sameSite: "strict",
-        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000, 
+        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000,
       });
 
       delete data.DT.refresh_token;
@@ -82,10 +87,10 @@ const requestRefreshToken = async (req, res) => {
     const cookieToken = req.cookies.refreshToken;
 
     if (!cookieToken) {
-      return res.status(401).json({ 
-        EM: "No refresh token found. Please login again.", 
-        EC: 401, 
-        DT: "" 
+      return res.status(401).json({
+        EM: "No refresh token found. Please login again.",
+        EC: 401,
+        DT: "",
       });
     }
 
@@ -94,45 +99,49 @@ const requestRefreshToken = async (req, res) => {
     if (data && data.EC === 0) {
       res.cookie("refreshToken", data.DT.refresh_token, {
         httpOnly: true,
-        secure: false, 
+        secure: false,
         sameSite: "strict",
-        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000, 
+        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000,
       });
 
-      delete data.DT.refresh_token; 
+      delete data.DT.refresh_token;
     } else {
       res.clearCookie("refreshToken");
     }
 
-    return res.status(data.EC === 0 ? 200 : (data.EC === 403 ? 403 : 401)).json({
+    return res.status(data.EC === 0 ? 200 : data.EC === 403 ? 403 : 401).json({
       EM: data.EM,
       EC: data.EC,
       DT: data.DT,
     });
   } catch (error) {
     console.log("Error in requestRefreshToken controller: ", error);
-    return res.status(500).json({ EM: "Something went wrong...", EC: 500, DT: "" });
+    return res.status(500).json({
+      EM: "Something went wrong...",
+      EC: 500,
+      DT: "",
+    });
   }
 };
 
 const logoutUser = async (req, res) => {
   try {
     const cookieToken = req.cookies.refreshToken;
-    
+
     await handleLogout(cookieToken);
-    
+
     res.clearCookie("refreshToken");
-    
-    return res.status(200).json({ 
+
+    return res.status(200).json({
       EM: "Logout successfully.",
-      EC: 0, 
-      DT: "" 
+      EC: 0,
+      DT: "",
     });
   } catch (error) {
-    return res.status(500).json({ 
-      EM: "Something went wrong...", 
-      EC: 500, 
-      DT: "" 
+    return res.status(500).json({
+      EM: "Something went wrong...",
+      EC: 500,
+      DT: "",
     });
   }
 };

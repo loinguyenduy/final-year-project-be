@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const JobStatusHistory = sequelize.define('Job_Status_History', {
+const JobStatusHistory = db.define('Job_Status_History', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     old_status: { type: DataTypes.STRING(50), allowNull: true },
     new_status: { type: DataTypes.STRING(50), allowNull: false },

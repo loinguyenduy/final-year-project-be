@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../../../core/database/connection.js';
+import db from '../../../core/database/connection.js';
 
-const EvidenceVault = sequelize.define('Evidence_Vault', {
+const EvidenceVault = db.define('Evidence_Vault', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     stage: { type: DataTypes.ENUM('BEFORE', 'DURING', 'AFTER'), allowNull: false },
     media_url: { type: DataTypes.TEXT, allowNull: false },

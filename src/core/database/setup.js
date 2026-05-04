@@ -1,23 +1,20 @@
-import sequelize from './connection.js';
+import db from './connection.js';
 
 import User from '../../modules/identity/models/User.model.js';
 import AuthProvider from '../../modules/identity/models/AuthProvider.model.js';
 import UserAddress from '../../modules/identity/models/UserAddress.model.js';
 import KycRequest from '../../modules/identity/models/KycRequest.model.js';
 import HandymanProfile from '../../modules/identity/models/HandymanProfile.model.js.js';
-
-
 import Service from '../../modules/matchmaking/models/Service.model.js';
 import Job from '../../modules/matchmaking/models/Job.model.js';
 import Bid from '../../modules/matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../modules/matchmaking/models/JobStatusHistory.model.js';
-
 import Wallet from '../../modules/fintech/models/Wallet.model.js';
 import Transaction from '../../modules/fintech/models/Transaction.model.js';
-
 import Review from '../../modules/dispute/models/Review.model.js';
 import EvidenceVault from '../../modules/fintech/models/EvidenceVault.model.js';
 import EContract from '../../modules/fintech/models/EContract.model.js';
+import RefreshToken from '../../modules/identity/models/RefreshToken.model.js';
 
 // A. Users
 User.hasMany(AuthProvider, { foreignKey: 'user_id' });
@@ -37,6 +34,9 @@ KycRequest.belongsTo(User, { as: 'Admin', foreignKey: 'reviewed_by_admin_id' });
 
 User.hasMany(Wallet, { foreignKey: 'user_id' });
 Wallet.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(RefreshToken, { foreignKey: 'user_id' });
+RefreshToken.belongsTo(User, { foreignKey: 'user_id' });
 
 // B. Jobs & Services
 Service.hasMany(Job, { foreignKey: 'service_id' });
@@ -92,13 +92,13 @@ Transaction.belongsTo(Job, { foreignKey: 'job_id' });
 
 const initDatabase = async () => {
     try {
-        await sequelize.authenticate();
+        await db.authenticate();
         console.log('Connection to PostgreSQL has been established successfully.');
-        await sequelize.sync({ alter: true }); 
+        await db.sync({ alter: true }); 
         console.log('All models were synchronized successfully.');
     } catch (error) {
         console.error('Unable to connect to the database:', error);
     }
 };
 
-export { sequelize, initDatabase };
+export { db, initDatabase };

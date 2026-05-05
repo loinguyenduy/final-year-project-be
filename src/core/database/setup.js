@@ -15,6 +15,7 @@ import Review from '../../modules/dispute/models/Review.model.js';
 import EvidenceVault from '../../modules/fintech/models/EvidenceVault.model.js';
 import EContract from '../../modules/fintech/models/EContract.model.js';
 import RefreshToken from '../../modules/identity/models/RefreshToken.model.js';
+import VerificationToken from '../../modules/identity/models/VerificationToken.model.js';
 
 // A. Users
 User.hasMany(AuthProvider, { foreignKey: 'user_id' });
@@ -37,6 +38,9 @@ Wallet.belongsTo(User, { foreignKey: 'user_id' });
 
 User.hasMany(RefreshToken, { foreignKey: 'user_id' });
 RefreshToken.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasOne(VerificationToken, { foreignKey: 'user_id' });
+VerificationToken.belongsTo(User, { foreignKey: 'user_id' });
 
 // B. Jobs & Services
 Service.hasMany(Job, { foreignKey: 'service_id' });

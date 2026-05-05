@@ -3,6 +3,8 @@ import {
   handleLoginUser,
   handleRefreshToken,
   handleLogout,
+  handleVerifyEmail,
+  handleResendVerifyEmail
 } from "../services/Auth.service.js";
 
 const registerNewUser = async (req, res) => {
@@ -146,4 +148,40 @@ const logoutUser = async (req, res) => {
   }
 };
 
-export { registerNewUser, loginUser, requestRefreshToken, logoutUser };
+const verifyEmail = async (req, res) => {
+  try {
+    const token = req.query.token; 
+    if (!token) {
+      return res.status(400).json({ EM: "Token is missing.", EC: 400 });
+    }
+
+    let data = await handleVerifyEmail(token);
+    
+    return res.status(data.EC === 0 ? 200 : 400).json({
+      EM: data.EM,
+      EC: data.EC,
+    });
+  } catch (error) {
+    return res.status(500).json({ EM: "Server error", EC: 500 });
+  }
+};
+
+const resendVerifyEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ EM: "Email is required.", EC: 400 });
+    }
+
+    let data = await handleResendVerifyEmail(email);
+
+    return res.status(data.EC === 0 ? 200 : 400).json({
+      EM: data.EM,
+      EC: data.EC,
+    });
+  } catch (error) {
+    return res.status(500).json({ EM: "Server error", EC: 500 });
+  }
+};
+
+export { registerNewUser, loginUser, requestRefreshToken, logoutUser, verifyEmail, resendVerifyEmail };

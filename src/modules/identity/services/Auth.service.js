@@ -5,6 +5,9 @@ import User from "../models/User.model.js";
 import AuthProvider from "../models/AuthProvider.model.js";
 import RefreshToken from "../models/RefreshToken.model.js";
 import { createAccessToken, createRefreshToken, verifyToken } from "../../../core/utils/jwt.util.js";
+import crypto from "crypto"; 
+import VerificationToken from "../models/VerificationToken.model.js"; 
+import { sendVerificationEmail } from "../../../core/utils/mail.util.js";
 
 const hashUserPassword = async (userPassword) => {
   const salt = await bcrypt.genSalt(10);
@@ -68,7 +71,21 @@ const handleRegisterUser = async (rawUserData) => {
       { transaction: trans },
     );
 
+    // create verification token and send email
+    const randomToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // expires in 15 minutes
+
+    await VerificationToken.create(
+      {
+        user_id: newUser.id,
+        token: randomToken,
+        expires_at: expiresAt,
+      },
+      { transaction: trans },
+    );
+
     await trans.commit();
+    sendVerificationEmail(newUser.email, newUser.full_name, randomToken);
 
     return {
       EM: "User account is created successfully.",
@@ -113,6 +130,15 @@ const handleLoginUser = async (inputUserData) => {
     if (!user.is_active) {
       return { 
         EM: "Your account has been locked by Administrator.", 
+        EC: 403, 
+        DT: "" 
+      };
+    }
+
+    // Check email verified for local provider
+    if (!user.is_email_verified) {
+      return { 
+        EM: "Please verify your email address to log in. Check your inbox.", 
         EC: 403, 
         DT: "" 
       };
@@ -285,4 +311,101 @@ const handleLogout = async (cookieToken) => {
   }
 };
 
-export { handleRegisterUser, handleLoginUser, handleRefreshToken, handleLogout };
+const handleVerifyEmail = async (token) => {
+  const trans = await db.transaction();
+  try {
+    //Find the verification token record
+    const verificationRecord = await VerificationToken.findOne({ where: { token: token } });
+
+    if (!verificationRecord) {
+      await trans.rollback();
+      return { 
+        EM: "Invalid or expired verification token.", 
+        EC: 400 
+      };
+    }
+
+    // Check if token is expired
+    if (new Date() > verificationRecord.expires_at) {
+      await trans.rollback();
+      return { 
+        EM: "Verification token has expired. Please request a new one.", 
+        EC: 400 
+      };
+    }
+
+    // Update user's email verification status
+    await User.update(
+      { is_email_verified: true },
+      { where: { id: verificationRecord.user_id }, transaction: trans }
+    );
+
+    // Delete the verification token after successful verification
+    await verificationRecord.destroy({ transaction: trans });
+
+    await trans.commit();
+    return { 
+      EM: "Email verified successfully. You can now login.", 
+      EC: 0 
+    };
+  } catch (error) {
+    await trans.rollback();
+    console.log("Error in handleVerifyEmail: ", error);
+    return { 
+      EM: "Server error during verification.", 
+      EC: 500 
+    };
+  }
+};
+
+const handleResendVerifyEmail = async (email) => {
+  const t = await db.transaction();
+  try {
+    // 1. Tìm User
+    const user = await User.findOne({ where: { email: email } });
+
+    if (!user) {
+      await t.rollback();
+      return { EM: "User not found.", EC: 404 };
+    }
+
+    // 2. Nếu đã xác thực rồi thì không gửi lại nữa
+    if (user.is_email_verified) {
+      await t.rollback();
+      return { EM: "Email is already verified. You can log in.", EC: 400 };
+    }
+
+    // 3. XÓA các Token cũ (đã hết hạn) của User này để DB sạch sẽ
+    await VerificationToken.destroy({
+      where: { user_id: user.id },
+      transaction: t,
+    });
+
+    // 4. Tạo Token MỚI
+    const randomToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // Thêm 15 phút
+
+    await VerificationToken.create(
+      {
+        user_id: user.id,
+        token: randomToken,
+        expires_at: expiresAt,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    // 5. Gửi Mail
+    sendVerificationEmail(user.email, user.full_name, randomToken);
+
+    return { EM: "A new verification email has been sent.", EC: 0 };
+  } catch (error) {
+    await t.rollback();
+    console.log("Error in handleResendVerifyEmail: ", error);
+    return { EM: "Server error.", EC: 500 };
+  }
+};
+
+
+export { handleRegisterUser, handleLoginUser, handleRefreshToken, handleLogout, handleVerifyEmail, handleResendVerifyEmail };

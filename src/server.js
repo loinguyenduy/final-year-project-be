@@ -4,6 +4,7 @@ import cors from 'cors';
 import { initDatabase } from './core/database/setup.js';
 import cookieParser from 'cookie-parser';
 import v1Routes from './core/routes/v1.routes.js'; 
+import { initCronJobs } from './core/cron/index.js'; 
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ app.get('/', (req, res) => {
 });
 
 initDatabase().then(() => {
+    initCronJobs();
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
     });

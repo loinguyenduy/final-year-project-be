@@ -1,21 +1,17 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import { initDatabase } from "./core/database/setup.js";
 import cookieParser from "cookie-parser";
-import v1Routes from "./core/routes/v1.routes.js";
+import { initDatabase } from "./core/database/setup.js";
 import { initCronJobs } from "./core/cron/index.js";
-import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-import { initDatabase } from "./core/database/setup.js";
-import cookieParser from "cookie-parser";
 import v1Routes from "./core/routes/v1.routes.js";
 import passport from "./core/middlewares/passport.middleware.js";
 
 dotenv.config();
 
 const app = express();
+
+// Middlewares
 app.use(express.json());
 app.use(cors());
 app.use(cookieParser());
@@ -26,7 +22,6 @@ app.use("/api/v1", v1Routes);
 
 const PORT = process.env.PORT || 5000;
 
-//
 app.get("/", (req, res) => {
   res.send("Trusted Handyman API is running");
 });
@@ -36,7 +31,6 @@ initDatabase().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
-});
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+}).catch(err => {
+  console.error("Failed to initialize database:", err);
 });

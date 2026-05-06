@@ -7,24 +7,23 @@ import { createAccessToken, createRefreshToken } from "../../../core/utils/jwt.u
 const upsertGoogleUser = async (googleProfile) => {
   const t = await db.transaction();
   try {
-    // Trích xuất dữ liệu từ Google Profile
+    // Get user info from Google profile
     const email = googleProfile.emails[0].value;
     const fullName = googleProfile.displayName;
     const avatarUrl = googleProfile.photos[0].value;
     const providerId = googleProfile.id;
 
-    // 1. Tìm User bằng Email
     let user = await User.findOne({ where: { email: email } });
 
     if (!user) {
-      // TRƯỜNG HỢP 1: User hoàn toàn mới -> TẠO MỚI
+      // case 1: if user does not exist, create new user and link to Google
       user = await User.create(
         {
           email: email,
           full_name: fullName,
           avatar_url: avatarUrl,
           role: "CUSTOMER",
-          is_email_verified: true, // Google đã xác thực email
+          is_email_verified: true, 
         },
         { transaction: t }
       );
@@ -38,19 +37,16 @@ const upsertGoogleUser = async (googleProfile) => {
         { transaction: t }
       );
     } else {
-      // TRƯỜNG HỢP 2: User đã tồn tại -> ACCOUNT LINKING
-      // Cập nhật is_email_verified thành true (nếu trước đó đăng ký local mà chưa verify)
+      // case 2: if user exists, check if email is verified and link to Google if not linked yet
       if (!user.is_email_verified) {
         await user.update({ is_email_verified: true }, { transaction: t });
       }
 
-      // Kiểm tra xem đã link với Google chưa
       const existingProvider = await AuthProvider.findOne({
         where: { user_id: user.id, provider: "GOOGLE" },
       });
 
       if (!existingProvider) {
-        // Chưa có thì tạo liên kết (Linking)
         await AuthProvider.create(
           {
             user_id: user.id,
@@ -62,7 +58,7 @@ const upsertGoogleUser = async (googleProfile) => {
       }
     }
 
-    // 2. Sinh Token của hệ thống (Access & Refresh Token)
+    // create JWT tokens
     const payload = {
       id: user.id,
       email: user.email,
@@ -73,7 +69,6 @@ const upsertGoogleUser = async (googleProfile) => {
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 
-    // 3. Lưu Refresh Token vào Database (Cơ chế RTR)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
@@ -108,7 +103,6 @@ const upsertGoogleUser = async (googleProfile) => {
 const upsertFacebookUser = async (facebookProfile) => {
   const t = await db.transaction();
   try {
-    // CHỐT CHẶN BẢO MẬT: Bắt buộc phải có email
     if (!facebookProfile.emails || facebookProfile.emails.length === 0) {
       await t.rollback();
       return { 
@@ -118,15 +112,15 @@ const upsertFacebookUser = async (facebookProfile) => {
       };
     }
 
-    // LẤY DỮ LIỆU
+    // Get user info from Facebook profile
     const email = facebookProfile.emails[0].value;
     const fullName = facebookProfile.displayName;
     const avatarUrl = facebookProfile.photos && facebookProfile.photos.length > 0 ? facebookProfile.photos[0].value : null;
     const providerId = facebookProfile.id;
 
-    // TÌM & ĐỒNG BỘ USER (ACCOUNT LINKING)
     let user = await User.findOne({ where: { email: email } });
 
+    //case 1: if user does not exist, create new user and link to Facebook
     if (!user) {
       user = await User.create(
         { 
@@ -134,7 +128,7 @@ const upsertFacebookUser = async (facebookProfile) => {
           full_name: fullName, 
           avatar_url: avatarUrl, 
           role: "CUSTOMER", 
-          is_email_verified: true // FB đã xác thực
+          is_email_verified: true 
         },
         { transaction: t }
       );
@@ -144,6 +138,7 @@ const upsertFacebookUser = async (facebookProfile) => {
         { transaction: t }
       );
     } else {
+      // case 2: if user exists, check if email is verified and link to Facebook if not linked yet
       if (!user.is_email_verified) {
         await user.update({ is_email_verified: true }, { transaction: t });
       }
@@ -160,8 +155,12 @@ const upsertFacebookUser = async (facebookProfile) => {
       }
     }
 
-    // SINH TOKEN
-    const payload = { id: user.id, email: user.email, full_name: user.full_name, role: user.role };
+    const payload = { 
+      id: user.id, 
+      email: user.email, 
+      full_name: user.full_name, 
+      role: user.role 
+    };
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 

@@ -5,7 +5,7 @@ import { Strategy as FacebookStrategy } from "passport-facebook";
 
 dotenv.config();
 
-// Cấu hình Google Strategy
+// Config Google Strategy
 passport.use(
   new GoogleStrategy(
     {
@@ -15,9 +15,6 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        // profile chứa toàn bộ thông tin Google trả về (email, tên, ảnh)
-        // accessToken và refreshToken ở đây là của Google cấp, ta không cần dùng đến nó.
-        // Ta chỉ cần pass cái 'profile' này đi tiếp.
         return done(null, profile);
       } catch (error) {
         return done(error, null);
@@ -26,6 +23,7 @@ passport.use(
   )
 );
 
+// Config Facebook Strategy
 passport.use(
   new FacebookStrategy(
     {
@@ -35,8 +33,12 @@ passport.use(
       profileFields: ['id', 'displayName', 'photos', 'email'], 
     },
     async (accessToken, refreshToken, profile, done) => {
-      try { return done(null, profile); } 
-      catch (error) { return done(error, null); }
+      try { 
+        return done(null, profile); 
+      } 
+      catch (error) { 
+        return done(error, null); 
+      }
     }
   )
 );

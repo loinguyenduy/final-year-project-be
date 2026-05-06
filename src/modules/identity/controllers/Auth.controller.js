@@ -152,7 +152,10 @@ const verifyEmail = async (req, res) => {
   try {
     const token = req.query.token; 
     if (!token) {
-      return res.status(400).json({ EM: "Token is missing.", EC: 400 });
+      return res.status(400).json({ 
+        EM: "Token is missing.", 
+        EC: 400 
+      });
     }
 
     let data = await handleVerifyEmail(token);
@@ -162,7 +165,10 @@ const verifyEmail = async (req, res) => {
       EC: data.EC,
     });
   } catch (error) {
-    return res.status(500).json({ EM: "Server error", EC: 500 });
+    return res.status(500).json({ 
+      EM: "Server error", 
+      EC: 500 
+    });
   }
 };
 
@@ -170,7 +176,10 @@ const resendVerifyEmail = async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) {
-      return res.status(400).json({ EM: "Email is required.", EC: 400 });
+      return res.status(400).json({ 
+        EM: "Email is required.", 
+        EC: 400 
+      });
     }
 
     let data = await handleResendVerifyEmail(email);
@@ -180,7 +189,10 @@ const resendVerifyEmail = async (req, res) => {
       EC: data.EC,
     });
   } catch (error) {
-    return res.status(500).json({ EM: "Server error", EC: 500 });
+    return res.status(500).json({ 
+      EM: "Server error", 
+      EC: 500 
+    });
   }
 };
 

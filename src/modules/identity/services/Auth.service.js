@@ -84,6 +84,7 @@ const handleRegisterUser = async (rawUserData) => {
       { transaction: trans },
     );
 
+    // save all data to database and commit transaction
     await trans.commit();
     sendVerificationEmail(newUser.email, newUser.full_name, randomToken);
 
@@ -103,6 +104,7 @@ const handleRegisterUser = async (rawUserData) => {
   }
 };
 
+////////////////////
 const checkPassword = async (inputPassword, hashPassword) => {
   return await bcrypt.compare(inputPassword, hashPassword);
 };
@@ -151,7 +153,7 @@ const handleLoginUser = async (inputUserData) => {
         provider: 'LOCAL'
       }
     });
-
+  
     if (!authProvider || !authProvider.password_hash) {
       return { 
         EM: "Please login with your Social Account (Google/Facebook).", 
@@ -180,7 +182,7 @@ const handleLoginUser = async (inputUserData) => {
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 
-
+    // Expires in 7 days for refresh token in database
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
@@ -361,29 +363,31 @@ const handleVerifyEmail = async (token) => {
 const handleResendVerifyEmail = async (email) => {
   const t = await db.transaction();
   try {
-    // 1. Tìm User
     const user = await User.findOne({ where: { email: email } });
 
     if (!user) {
       await t.rollback();
-      return { EM: "User not found.", EC: 404 };
+      return { 
+        EM: "User not found.", 
+        EC: 404
+      };
     }
 
-    // 2. Nếu đã xác thực rồi thì không gửi lại nữa
     if (user.is_email_verified) {
       await t.rollback();
-      return { EM: "Email is already verified. You can log in.", EC: 400 };
+      return { 
+        EM: "Email is already verified. You can log in.", 
+        EC: 400 
+      };
     }
 
-    // 3. XÓA các Token cũ (đã hết hạn) của User này để DB sạch sẽ
     await VerificationToken.destroy({
       where: { user_id: user.id },
       transaction: t,
     });
 
-    // 4. Tạo Token MỚI
     const randomToken = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // Thêm 15 phút
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); 
 
     await VerificationToken.create(
       {
@@ -396,14 +400,19 @@ const handleResendVerifyEmail = async (email) => {
 
     await t.commit();
 
-    // 5. Gửi Mail
     sendVerificationEmail(user.email, user.full_name, randomToken);
 
-    return { EM: "A new verification email has been sent.", EC: 0 };
+    return { 
+      EM: "A new verification email has been sent.", 
+      EC: 0 
+    };
   } catch (error) {
     await t.rollback();
     console.log("Error in handleResendVerifyEmail: ", error);
-    return { EM: "Server error.", EC: 500 };
+    return { 
+      EM: "Server error.", 
+      EC: 500 
+    };
   }
 };
 

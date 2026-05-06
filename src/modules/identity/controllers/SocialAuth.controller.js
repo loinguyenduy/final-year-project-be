@@ -1,4 +1,4 @@
-import { upsertGoogleUser } from "../services/SocialAuth.service.js";
+import { upsertGoogleUser, upsertFacebookUser } from "../services/SocialAuth.service.js";
 
 const handleGoogleCallback = async (req, res) => {
   try {
@@ -39,4 +39,37 @@ const handleGoogleCallback = async (req, res) => {
   }
 };
 
-export { handleGoogleCallback };
+const handleFacebookCallback = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ EM: "Facebook authentication failed", EC: 401 });
+    }
+
+    const data = await upsertFacebookUser(req.user);
+
+    if (data.EC === 0) {
+      // Gài Refresh Token vào HttpOnly Cookie
+      res.cookie("refreshToken", data.DT.refresh_token, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "strict",
+        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000,
+      });
+
+      delete data.DT.refresh_token;
+
+      return res.status(200).json({
+        EM: data.EM,
+        EC: data.EC,
+        DT: data.DT,
+      });
+    }
+
+    return res.status(data.EC).json({ EM: data.EM, EC: data.EC });
+  } catch (error) {
+    console.log("Error FB Controller: ", error);
+    return res.status(500).json({ EM: "Server error", EC: 500 });
+  }
+};
+
+export { handleGoogleCallback, handleFacebookCallback };

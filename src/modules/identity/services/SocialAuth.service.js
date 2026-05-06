@@ -105,4 +105,86 @@ const upsertGoogleUser = async (googleProfile) => {
   }
 };
 
-export { upsertGoogleUser };
+const upsertFacebookUser = async (facebookProfile) => {
+  const t = await db.transaction();
+  try {
+    // CHỐT CHẶN BẢO MẬT: Bắt buộc phải có email
+    if (!facebookProfile.emails || facebookProfile.emails.length === 0) {
+      await t.rollback();
+      return { 
+        EM: "Facebook email is required to login.", 
+        EC: 400, 
+        DT: "" 
+      };
+    }
+
+    // LẤY DỮ LIỆU
+    const email = facebookProfile.emails[0].value;
+    const fullName = facebookProfile.displayName;
+    const avatarUrl = facebookProfile.photos && facebookProfile.photos.length > 0 ? facebookProfile.photos[0].value : null;
+    const providerId = facebookProfile.id;
+
+    // TÌM & ĐỒNG BỘ USER (ACCOUNT LINKING)
+    let user = await User.findOne({ where: { email: email } });
+
+    if (!user) {
+      user = await User.create(
+        { 
+          email: email, 
+          full_name: fullName, 
+          avatar_url: avatarUrl, 
+          role: "CUSTOMER", 
+          is_email_verified: true // FB đã xác thực
+        },
+        { transaction: t }
+      );
+
+      await AuthProvider.create(
+        { user_id: user.id, provider: "FACEBOOK", provider_id: providerId },
+        { transaction: t }
+      );
+    } else {
+      if (!user.is_email_verified) {
+        await user.update({ is_email_verified: true }, { transaction: t });
+      }
+
+      const existingProvider = await AuthProvider.findOne({
+        where: { user_id: user.id, provider: "FACEBOOK" },
+      });
+
+      if (!existingProvider) {
+        await AuthProvider.create(
+          { user_id: user.id, provider: "FACEBOOK", provider_id: providerId },
+          { transaction: t }
+        );
+      }
+    }
+
+    // SINH TOKEN
+    const payload = { id: user.id, email: user.email, full_name: user.full_name, role: user.role };
+    const accessToken = createAccessToken(payload);
+    const refreshToken = createRefreshToken(payload);
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await RefreshToken.create(
+      { user_id: user.id, token: refreshToken, expires_at: expiresAt, is_revoked: false },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+    return {
+      EM: "Facebook login successfully",
+      EC: 0,
+      DT: { access_token: accessToken, refresh_token: refreshToken, user: user.get({ plain: true }) },
+    };
+  } catch (error) {
+    await t.rollback();
+    console.log("Error in upsertFacebookUser: ", error);
+    return { EM: "Server error during Facebook login", EC: 500, DT: "" };
+  }
+};
+
+export { upsertGoogleUser, upsertFacebookUser };

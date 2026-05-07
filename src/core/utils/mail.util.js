@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendVerificationEmail = async (toEmail, fullName, verifyToken) => {
-  const verificationLink = `http://localhost:5000/api/v1/auth/verify-email?token=${verifyToken}`;
+  const verificationLink = `http://localhost:5173/verify-email?token=${verifyToken}`;
 
   const mailOptions = {
     from: `"The Trusted Handyman" <${process.env.EMAIL_FROM}>`,

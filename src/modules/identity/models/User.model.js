@@ -12,8 +12,8 @@ const User = db.define(
     full_name: {
       type: DataTypes.STRING(100),
       allowNull: false,
-    },
-    phone_number: { 
+    },    
+      phone_number: { 
       type: DataTypes.STRING(20), 
       unique: true, 
       allowNull: true 
@@ -32,7 +32,7 @@ const User = db.define(
       defaultValue: true 
     },
     avatar_url: { 
-      type: DataTypes.STRING(255), 
+      type: DataTypes.TEXT, 
       allowNull: true 
     },
     is_email_verified: { 

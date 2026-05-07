@@ -1,12 +1,22 @@
-import { upsertGoogleUser, upsertFacebookUser } from "../services/SocialAuth.service.js";
+import {
+  upsertGoogleUser,
+  upsertFacebookUser,
+} from "../services/SocialAuth.service.js";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
 const handleGoogleCallback = async (req, res) => {
   try {
-    // req.user is data returned from Passport's Google Strategy 
+    // req.user is data returned from Passport's Google Strategy
     const googleProfile = req.user;
 
     if (!googleProfile) {
-      return res.status(401).json({ EM: "Google authentication failed", EC: 401 });
+      return res
+        .status(401)
+        .json({ EM: "Google authentication failed", EC: 401 });
     }
 
     const data = await upsertGoogleUser(googleProfile);
@@ -21,31 +31,22 @@ const handleGoogleCallback = async (req, res) => {
 
       delete data.DT.refresh_token;
 
-      // Ở sản phẩm thật, chỗ này sẽ là res.redirect('http://localhost:5173/login-success?token=' + data.DT.access_token)
-      return res.status(200).json({
-        EM: data.EM,
-        EC: data.EC,
-        DT: data.DT,
-      });
+      return res.redirect(
+        `${frontendUrl}/social-callback?token=${data.DT.access_token}`,
+      );
     } else {
-      return res.status(500).json({ 
-        EM: data.EM, 
-        EC: data.EC 
-      });
+      return res.redirect(`${frontendUrl}/login?error=social_auth_failed`);
     }
   } catch (error) {
     console.log("Error in handleGoogleCallback controller: ", error);
-    return res.status(500).json({ 
-      EM: "Server error", 
-      EC: 500 
-    });
+    return res.redirect(`${frontendUrl}/login?error=server_error`);
   }
 };
 
 const handleFacebookCallback = async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({ EM: "Facebook authentication failed", EC: 401 });
+      return res.redirect(`${frontendUrl}/login?error=facebook_auth_failed`);
     }
 
     const data = await upsertFacebookUser(req.user);
@@ -60,17 +61,15 @@ const handleFacebookCallback = async (req, res) => {
 
       delete data.DT.refresh_token;
 
-      return res.status(200).json({
-        EM: data.EM,
-        EC: data.EC,
-        DT: data.DT,
-      });
+      return res.redirect(
+        `${frontendUrl}/social-callback?token=${data.DT.access_token}`,
+      );
     }
 
-    return res.status(data.EC).json({ EM: data.EM, EC: data.EC });
+    return res.redirect(`${frontendUrl}/login?error=facebook_auth_failed`);
   } catch (error) {
     console.log("Error FB Controller: ", error);
-    return res.status(500).json({ EM: "Server error", EC: 500 });
+    return res.redirect(`${frontendUrl}/login?error=server_error`);
   }
 };
 

@@ -16,8 +16,12 @@ const Transaction = db.define('Transaction', {
         allowNull: false 
     },
     status: { 
-        type: DataTypes.ENUM('PENDING', 'SUCCESS', 'FAILED'), 
+        type: DataTypes.ENUM('PENDING', 'SUCCESS', 'FAILED', 'EXPIRED'), 
         defaultValue: 'PENDING' 
+    },
+    payment_method: { 
+        type: DataTypes.ENUM('PAYOS', 'VNPAY', 'CASH', 'INTERNAL'),
+        allowNull: true
     },
     payment_gateway_code: {
         type: DataTypes.STRING(50),

@@ -43,6 +43,7 @@ const createVNPayTopUpLinkService = async (userId, amount, ipAddr) => {
             amount: amount,
             transaction_type: 'TOP_UP',
             status: 'PENDING',
+            payment_method: 'VNPAY',
             payment_gateway_code: String(orderCode), 
             description: `Top up wallet for user ${userId} via VNPay`,
             from_wallet_id: null, 

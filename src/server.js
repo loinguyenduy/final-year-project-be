@@ -18,7 +18,7 @@ app.use(
     origin: process.env.FRONTEND_URL || "http://localhost:5173",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
+    credentials: true, // Allow cookies to be sent in cross-origin requests
   }),
 );
 app.use(cookieParser());

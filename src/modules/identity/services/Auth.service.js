@@ -8,6 +8,7 @@ import { createAccessToken, createRefreshToken, verifyToken } from "../../../cor
 import crypto from "crypto"; 
 import VerificationToken from "../models/VerificationToken.model.js"; 
 import { sendVerificationEmail } from "../../../core/utils/mail.util.js";
+import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
 
 const hashUserPassword = async (userPassword) => {
   const salt = await bcrypt.genSalt(10);
@@ -336,11 +337,28 @@ const handleVerifyEmail = async (token) => {
       };
     }
 
+    const user = await User.findOne({ 
+      where: { id: verificationRecord.user_id },
+      transaction: trans
+    });
+
+    if (!user) {
+      await trans.rollback();
+      return { 
+        EM: "User not found.", 
+        EC: 404,
+        DT: "" 
+      };
+    }
+
     // Update user's email verification status
     await User.update(
       { is_email_verified: true },
       { where: { id: verificationRecord.user_id }, transaction: trans }
     );
+
+    // Initialize wallets for the user after email verification
+    await initializeUserWallets(user.id, user.role, trans);
 
     // Delete the verification token after successful verification
     await verificationRecord.destroy({ transaction: trans });

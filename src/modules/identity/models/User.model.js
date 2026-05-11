@@ -39,6 +39,10 @@ const User = db.define(
       type: DataTypes.BOOLEAN, 
       defaultValue: false 
     }, 
+    kyc_status: {
+      type: DataTypes.ENUM('UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'),
+      defaultValue: 'UNVERIFIED'
+    }
   },
 
   { 

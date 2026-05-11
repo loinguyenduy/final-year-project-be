@@ -3,6 +3,7 @@ import User from "../models/User.model.js";
 import AuthProvider from "../models/AuthProvider.model.js";
 import RefreshToken from "../models/RefreshToken.model.js";
 import { createAccessToken, createRefreshToken } from "../../../core/utils/jwt.util.js";
+import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
 
 const upsertGoogleUser = async (googleProfile) => {
   const t = await db.transaction();
@@ -36,6 +37,9 @@ const upsertGoogleUser = async (googleProfile) => {
         },
         { transaction: t }
       );
+
+      // Initialize wallets for the new user
+      await initializeUserWallets(user.id, user.role, t);
     } else {
       // case 2: if user exists, check if email is verified and link to Google if not linked yet
       if (!user.is_email_verified) {
@@ -137,6 +141,9 @@ const upsertFacebookUser = async (facebookProfile) => {
         { user_id: user.id, provider: "FACEBOOK", provider_id: providerId },
         { transaction: t }
       );
+
+      // Initialize wallets for the new user
+      await initializeUserWallets(user.id, user.role, t);
     } else {
       // case 2: if user exists, check if email is verified and link to Facebook if not linked yet
       if (!user.is_email_verified) {

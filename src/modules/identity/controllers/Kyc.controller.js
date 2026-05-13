@@ -3,9 +3,8 @@ import { submitCustomerKycService } from "../services/Kyc.service.js";
 const handleSubmitKyc = async (req, res) => {
     try {
         const userId = req.user.id;
-        const files = req.files; // Multer gán dữ liệu vào req.files
+        const files = req.files; // req.files contains the uploaded files from Cloudinary middleware
 
-        // 1. Kiểm tra xem có đủ 3 loại file không
         if (!files || !files.cccd_front || !files.cccd_back || !files.portrait) {
             return res.status(400).json({
                 EM: "Please provide all required documents: CCCD Front, CCCD Back, and Portrait.",
@@ -14,15 +13,13 @@ const handleSubmitKyc = async (req, res) => {
             });
         }
 
-        // 2. Lấy URL an toàn (path) do Cloudinary trả về
-        // Vì mỗi field maxCount là 1, nên mảng luôn có phần tử ở vị trí [0]
+        // Extract the URLs of the uploaded documents from Cloudinary response
         const documentUrls = {
             cccd_front: files.cccd_front[0].path,
             cccd_back: files.cccd_back[0].path,
             portrait: files.portrait[0].path
         };
 
-        // 3. Gọi Service xử lý
         const result = await submitCustomerKycService(userId, documentUrls);
 
         return res.status(200).json({

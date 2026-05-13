@@ -5,36 +5,36 @@ import KycRequest from '../models/KycRequest.model.js';
 const submitCustomerKycService = async (userId, documents) => {
     const trans = await db.transaction();
     try {
-        // 1. Kiểm tra User
+        // Validate if user exists
         const user = await User.findByPk(userId, { transaction: trans });
         if (!user) {
             await trans.rollback();
             return { 
-              EM: "User not found.", 
-              EC: 404, 
-              DT: "" 
+                EM: "User not found.", 
+                EC: 404, 
+                DT: "" 
             };
         }
 
-        // 2. Chặn nếu User đang chờ duyệt hoặc đã duyệt
+        // Verify current KYC status to prevent duplicate submissions
         if (user.kyc_status === 'PENDING') {
             await trans.rollback();
             return { 
-              EM: "Your KYC request is already pending review.", 
-              EC: 400, 
-              DT: "" 
+            EM: "Your KYC request is already pending review.", 
+            EC: 400, 
+            DT: "" 
             };
         }
         if (user.kyc_status === 'VERIFIED') {
             await trans.rollback();
             return { 
-              EM: "Your account is already verified.", 
-              EC: 400, 
-              DT: "" 
+                EM: "Your account is already verified.", 
+                EC: 400, 
+                DT: "" 
             };
         }
 
-        // 3. Chuẩn bị dữ liệu để bulkCreate (tạo nhiều bản ghi 1 lúc)
+        // Prepare data for bulk insert into KYC_Request
         const kycDataToInsert = [
             {
                 user_id: userId,
@@ -56,26 +56,23 @@ const submitCustomerKycService = async (userId, documents) => {
             }
         ];
 
-        // 4. Lưu vào bảng KYC_Request
         await KycRequest.bulkCreate(kycDataToInsert, { transaction: trans });
-
-        // 5. Cập nhật trạng thái User thành PENDING
         await user.update({ kyc_status: 'PENDING' }, { transaction: trans });
 
         await trans.commit();
         return { 
-          EM: "KYC documents submitted successfully.", 
-          EC: 0, 
-          DT: "" 
+            EM: "KYC documents submitted successfully.", 
+            EC: 0, 
+            DT: "" 
         };
 
     } catch (error) {
         await trans.rollback();
         console.log(">>> Error in submitCustomerKycService: ", error);
         return { 
-          EM: "Internal server error while submitting KYC.", 
-          EC: 500, 
-          DT: "" 
+            EM: "Internal server error while submitting KYC.", 
+            EC: 500, 
+            DT: "" 
         };
     }
 };

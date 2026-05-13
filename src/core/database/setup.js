@@ -27,8 +27,8 @@ UserAddress.belongsTo(User, { foreignKey: 'user_id' });
 User.hasOne(HandymanProfile, { foreignKey: 'user_id', primaryKey: true });
 HandymanProfile.belongsTo(User, { foreignKey: 'user_id' });
 
-User.hasMany(KycRequest, { foreignKey: 'handyman_id' });
-KycRequest.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+User.hasMany(KycRequest, { foreignKey: 'user_id' });
+KycRequest.belongsTo(User, { foreignKey: 'user_id' });
 
 User.hasMany(KycRequest, { foreignKey: 'reviewed_by_admin_id' });
 KycRequest.belongsTo(User, { as: 'Admin', foreignKey: 'reviewed_by_admin_id' });

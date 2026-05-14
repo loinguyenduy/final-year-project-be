@@ -32,7 +32,9 @@ const uploadKycMiddleware = multer({
 }).fields([
   { name: 'cccd_front', maxCount: 1 },
   { name: 'cccd_back', maxCount: 1 },
-  { name: 'portrait', maxCount: 1 }
+  { name: 'portrait', maxCount: 1 },
+  { name: 'cv', maxCount: 1 },       
+  { name: 'certificate', maxCount: 1 }
 ]);
 
 export { cloudinary, uploadKycMiddleware };

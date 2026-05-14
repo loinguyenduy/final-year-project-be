@@ -12,7 +12,7 @@ const Transaction = db.define('Transaction', {
         allowNull: false 
     },
     transaction_type: { 
-        type: DataTypes.ENUM('TOP_UP', 'WITHDRAW', 'DEPOSIT_10', 'LOCK_100', 'PLATFORM_FEE_10', 'WARRANTY_HOLD_20', 'DISBURSE_80', 'WARRANTY_RELEASE', 'REFUND'), 
+        type: DataTypes.ENUM('TOP_UP', 'WITHDRAW', 'DEPOSIT_10', 'LOCK_100', 'PLATFORM_FEE_10', 'WARRANTY_HOLD_20', 'DISBURSE_80', 'WARRANTY_RELEASE', 'REFUND', 'BONDING_DEPOSIT'), 
         allowNull: false 
     },
     status: { 

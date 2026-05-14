@@ -9,6 +9,7 @@ import crypto from "crypto";
 import VerificationToken from "../models/VerificationToken.model.js"; 
 import { sendVerificationEmail } from "../../../core/utils/mail.util.js";
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
+import HandymanProfile from "../models/HandymanProfile.model.js";
 
 const hashUserPassword = async (userPassword) => {
   const salt = await bcrypt.genSalt(10);
@@ -51,12 +52,14 @@ const handleRegisterUser = async (rawUserData) => {
       };
     }
 
+    const userRole = rawUserData.role || "CUSTOMER";
+
     const newUser = await User.create(
       {
         email: rawUserData.email,
         phone_number: rawUserData.phone_number || null,
         full_name: rawUserData.full_name,
-        role: "CUSTOMER", 
+        role: userRole,
       },
       { transaction: trans },
     );
@@ -71,6 +74,16 @@ const handleRegisterUser = async (rawUserData) => {
       },
       { transaction: trans },
     );
+
+    if (userRole === "HANDYMAN") {
+        await HandymanProfile.create({
+            user_id: newUser.id, 
+            kyc_status: 'UNVERIFIED',
+            bayesian_score: 5.00,
+            total_jobs_completed: 0,
+            security_bond_status: 'UNPAID'
+        }, { transaction: trans });
+    }
 
     // create verification token and send email
     const randomToken = crypto.randomBytes(32).toString("hex");

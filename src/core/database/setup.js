@@ -4,7 +4,7 @@ import User from '../../modules/identity/models/User.model.js';
 import AuthProvider from '../../modules/identity/models/AuthProvider.model.js';
 import UserAddress from '../../modules/identity/models/UserAddress.model.js';
 import KycRequest from '../../modules/identity/models/KycRequest.model.js';
-import HandymanProfile from '../../modules/identity/models/HandymanProfile.model.js.js';
+import HandymanProfile from '../../modules/identity/models/HandymanProfile.model.js';
 import Service from '../../modules/matchmaking/models/Service.model.js';
 import Job from '../../modules/matchmaking/models/Job.model.js';
 import Bid from '../../modules/matchmaking/models/Bid.model.js';

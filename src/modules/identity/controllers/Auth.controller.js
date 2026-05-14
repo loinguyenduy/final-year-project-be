@@ -9,7 +9,7 @@ import {
 
 const registerNewUser = async (req, res) => {
   try {
-    const { email, password, full_name, phone_number } = req.body;
+    const { email, password, full_name, phone_number, role } = req.body;
 
     if (!email || !password || !full_name) {
       return res.status(400).json({
@@ -22,6 +22,14 @@ const registerNewUser = async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({
         EM: "Your password must have more than 6 letters.",
+        EC: 400,
+        DT: "",
+      });
+    }
+
+    if (role && !['CUSTOMER', 'HANDYMAN'].includes(role)) {
+      return res.status(400).json({
+        EM: "Invalid role. Role must be CUSTOMER or HANDYMAN.",
         EC: 400,
         DT: "",
       });

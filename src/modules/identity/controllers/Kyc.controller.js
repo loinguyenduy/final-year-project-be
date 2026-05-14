@@ -1,4 +1,4 @@
-import { submitCustomerKycService } from "../services/Kyc.service.js";
+import { submitCustomerKycService, submitHandymanKycService } from "../services/Kyc.service.js";
 
 const handleSubmitKyc = async (req, res) => {
     try {
@@ -38,4 +38,43 @@ const handleSubmitKyc = async (req, res) => {
     }
 };
 
-export { handleSubmitKyc };
+const handleHandymanKyc = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const files = req.files; 
+
+        if (!files || !files.cccd_front || !files.cccd_back || !files.portrait || !files.cv || !files.certificate) {
+            return res.status(400).json({
+                EM: "Missing documents. Please provide CCCD (Front/Back), Portrait, CV, and Certificate.",
+                EC: 1,
+                DT: ""
+            });
+        }
+
+        const documentUrls = {
+            cccd_front: files.cccd_front[0].path,
+            cccd_back: files.cccd_back[0].path,
+            portrait: files.portrait[0].path,
+            cv: files.cv[0].path,
+            certificate: files.certificate[0].path
+        };
+
+        const result = await submitHandymanKycService(userId, documentUrls);
+
+        return res.status(200).json({
+            EM: result.EM,
+            EC: result.EC,
+            DT: result.DT
+        });
+
+    } catch (error) {
+        console.log(">>> Error in handleHandymanKyc controller: ", error);
+        return res.status(500).json({
+            EM: "Internal server error.",
+            EC: 500,
+            DT: ""
+        });
+    }
+};
+
+export { handleSubmitKyc, handleHandymanKyc };

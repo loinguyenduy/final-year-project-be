@@ -9,6 +9,7 @@ import crypto from "crypto";
 import VerificationToken from "../models/VerificationToken.model.js"; 
 import { sendVerificationEmail } from "../../../core/utils/mail.util.js";
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
+import HandymanProfile from "../models/HandymanProfile.model.js";
 
 const hashUserPassword = async (userPassword) => {
   const salt = await bcrypt.genSalt(10);

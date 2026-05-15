@@ -30,6 +30,10 @@ const KycRequest = db.define('KYC_Request', {
     reviewed_by_admin_id: { 
         type: DataTypes.UUID, 
         allowNull: true 
+    },
+    reviewed_at: { 
+        type: DataTypes.DATE, 
+        allowNull: true 
     }
 }, { timestamps: true });
 

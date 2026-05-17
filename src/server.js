@@ -40,7 +40,7 @@ initDatabase().then(() => {
     console.log(`Server running on port ${PORT}`);
   });
   // Seed the admin user
-  seedAdmin();
+  // seedAdmin();
 }).catch(err => {
   console.error("Failed to initialize database:", err);
 });

@@ -4,10 +4,8 @@ import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.midd
 
 const router = express.Router();
 
-router.use(checkUserJWT);
-router.use(checkUserRole(['ADMIN']));
 
-router.get('/kyc/pending', getPendingKyc);
-router.post('/kyc/review', reviewKyc);
+router.get('/kyc/pending', checkUserJWT, checkUserRole(['ADMIN']), getPendingKyc);
+router.post('/kyc/review', checkUserJWT, checkUserRole(['ADMIN']), reviewKyc);
 
 export default router;

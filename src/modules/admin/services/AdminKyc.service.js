@@ -7,13 +7,25 @@ const getPendingKycService = async () => {
     try {
         const users = await User.findAll({
             where: { kyc_status: 'PENDING' },
-            include: [{ model: KycRequest, where: { status: 'PENDING' } }],
+            include: [{ 
+                model: KycRequest,
+                as: 'KycDocuments', 
+                where: { status: 'PENDING' } 
+            }],
             attributes: ['id', 'full_name', 'email', 'role', 'phone_number']
         });
-        return { EM: "Fetch pending KYC successfully.", EC: 0, DT: users };
+        return { 
+            EM: "Fetch pending KYC successfully.", 
+            EC: 0, 
+            DT: users 
+        };
     } catch (error) {
         console.log(error);
-        return { EM: "Error fetching data.", EC: 500, DT: [] };
+        return { 
+            EM: "Error fetching data.", 
+            EC: 500, 
+            DT: [] 
+        };
     }
 };
 
@@ -22,7 +34,13 @@ const handleReviewKycService = async (adminId, data) => {
     const trans = await db.transaction();
     try {
         const user = await User.findByPk(userId, { transaction: trans });
-        if (!user) throw new Error("User not found");
+        if (!user) {
+            return { 
+                EM: "User not found.", 
+                EC: 404, 
+                DT: "" 
+            };
+        }
 
         await user.update({ kyc_status: status }, { transaction: trans });
 
@@ -45,10 +63,18 @@ const handleReviewKycService = async (adminId, data) => {
         }
 
         await trans.commit();
-        return { EM: `User has been ${status.toLowerCase()} successfully.`, EC: 0, DT: "" };
+        return { 
+            EM: `User has been ${status.toLowerCase()} successfully.`, 
+            EC: 0, 
+            DT: "" 
+        };
     } catch (error) {
         await trans.rollback();
-        return { EM: error.message, EC: 500, DT: "" };
+        return { 
+            EM: error.message, 
+            EC: 500, 
+            DT: "" 
+        };
     }
 };
 

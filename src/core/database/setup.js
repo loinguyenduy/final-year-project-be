@@ -27,10 +27,12 @@ UserAddress.belongsTo(User, { foreignKey: 'user_id' });
 User.hasOne(HandymanProfile, { foreignKey: 'user_id', primaryKey: true });
 HandymanProfile.belongsTo(User, { foreignKey: 'user_id' });
 
-User.hasMany(KycRequest, { foreignKey: 'user_id' });
-KycRequest.belongsTo(User, { foreignKey: 'user_id' });
+// User là người nộp hồ sơ KYC
+User.hasMany(KycRequest, { as: 'KycDocuments', foreignKey: 'user_id' });
+KycRequest.belongsTo(User, { as: 'Owner', foreignKey: 'user_id' });
 
-User.hasMany(KycRequest, { foreignKey: 'reviewed_by_admin_id' });
+// User (role Admin) là người duyệt hồ sơ KYC
+User.hasMany(KycRequest, { as: 'ReviewedRequests', foreignKey: 'reviewed_by_admin_id' });
 KycRequest.belongsTo(User, { as: 'Admin', foreignKey: 'reviewed_by_admin_id' });
 
 User.hasMany(Wallet, { foreignKey: 'user_id' });

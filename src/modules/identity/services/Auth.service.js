@@ -373,6 +373,13 @@ const handleVerifyEmail = async (token) => {
     // Initialize wallets for the user after email verification
     await initializeUserWallets(user.id, user.role, trans);
 
+    if (user.role === 'HANDYMAN') {
+        await HandymanProfile.update(
+            { handyman_level: 'C1' },
+            { where: { user_id: user.id }, transaction: trans }
+        );
+    }
+
     // Delete the verification token after successful verification
     await verificationRecord.destroy({ transaction: trans });
 

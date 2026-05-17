@@ -17,7 +17,11 @@ const HandymanProfile = db.define('Handyman_Profile', {
     security_bond_status: { 
         type: DataTypes.ENUM('UNPAID', 'PAID', 'REFUNDED'), 
         defaultValue: 'UNPAID' 
-    }
+    },
+    handyman_level: { 
+        type: DataTypes.ENUM('C0', 'C1', 'C2', 'C3'), 
+        defaultValue: 'C0' 
+    },
 }, { timestamps: true });
 
 export default HandymanProfile;

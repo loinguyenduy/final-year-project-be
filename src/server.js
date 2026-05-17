@@ -6,6 +6,7 @@ import { initDatabase } from "./core/database/setup.js";
 import { initCronJobs } from "./core/cron/index.js";
 import v1Routes from "./core/routes/v1.routes.js";
 import passport from "./core/middlewares/passport.middleware.js";
+import seedAdmin from "./core/database/seedAdmin.js";
 
 dotenv.config();
 
@@ -38,6 +39,8 @@ initDatabase().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+  // Seed the admin user
+  // seedAdmin();
 }).catch(err => {
   console.error("Failed to initialize database:", err);
 });

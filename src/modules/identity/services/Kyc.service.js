@@ -145,4 +145,4 @@ const submitHandymanKycService = async (userId, documents) => {
     }
 };
 
-export { submitCustomerKycService, submitHandymanKycService };
+export { submitCustomerKycService, submitHandymanKycService };      

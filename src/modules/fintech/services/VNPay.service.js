@@ -36,13 +36,6 @@ const createVNPayTopUpLinkService = async (userId, amount, ipAddr, targetWallet 
                 }
 
                 const profile = await HandymanProfile.findOne({ where: { user_id: userId } });
-                if (!profile || profile.handyman_level !== 'C2') {
-                    return { 
-                        EM: "You must pass KYC review (Level C2) before depositing the security bond.", 
-                        EC: 403, 
-                        DT: "" 
-                    };
-                }
                 if (profile.security_bond_status === 'PAID') {
                     return { 
                         EM: "Security bond is already paid.", 
@@ -50,6 +43,15 @@ const createVNPayTopUpLinkService = async (userId, amount, ipAddr, targetWallet 
                         DT: "" 
                     };
                 }
+                
+                if (!profile || profile.handyman_level !== 'C2') {
+                    return { 
+                        EM: "You must pass KYC review (Level C2) before depositing the security bond.", 
+                        EC: 403, 
+                        DT: "" 
+                    };
+                }
+                
             } else {
                 walletType = "HANDYMAN_MAIN";
             }

@@ -4,11 +4,16 @@ import socialAuthRoutes from '../../modules/identity/routes/SocialAuth.routes.js
 import fintechRoutes from '../../modules/fintech/routes/fintech.routes.js'; 
 import kycRoutes from '../../modules/identity/routes/Kyc.routes.js';
 import adminRoutes from '../../modules/admin/routes/Admin.routes.js';
+import profileRoutes from '../../modules/identity/routes/Profile.routes.js';
+
 const router = express.Router();
 
 // Auth routes
 router.use('/auth', authRoutes);
 router.use('/auth', socialAuthRoutes); 
+
+// Profile routes
+router.use('/identity', profileRoutes);
 
 // Fintech routes
 router.use('/fintech', fintechRoutes);

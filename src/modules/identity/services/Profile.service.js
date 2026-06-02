@@ -1,21 +1,24 @@
 import User from '../models/User.model.js';
 import HandymanProfile from '../models/HandymanProfile.model.js';
 import Wallet from '../../fintech/models/Wallet.model.js';
+import AuthProvider from '../models/AuthProvider.model.js';
 
 const getDetailedProfileService = async (userId) => {
     try {
-        // Query User kết hợp bốc đầu dữ liệu từ các bảng liên quan nhờ setup.js
         const userProfile = await User.findByPk(userId, {
             attributes: ['id', 'full_name', 'email', 'phone_number', 'role', 'is_active', 'avatar_url', 'is_email_verified', 'kyc_status'],
             include: [
                 {
                     model: HandymanProfile,
-                    // Không cần alias vì mối quan hệ User-HandymanProfile trong setup.js không dùng alias
                     attributes: ['handyman_level', 'bayesian_score', 'total_jobs_completed', 'security_bond_status']
                 },
                 {
                     model: Wallet,
                     attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked']
+                },
+                {
+                    model: AuthProvider,
+                    attributes: ['id', 'provider']
                 }
             ]
         });

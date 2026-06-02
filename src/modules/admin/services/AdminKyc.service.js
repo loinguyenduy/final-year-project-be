@@ -57,7 +57,7 @@ const handleReviewKycService = async (adminId, data) => {
 
         if (user.role === 'HANDYMAN' && status === 'VERIFIED') {
             await HandymanProfile.update(
-                { handyman_level: 'C2' },
+                { handyman_level: 'C1' },
                 { where: { user_id: userId }, transaction: trans }
             );
         }

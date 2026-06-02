@@ -36,9 +36,9 @@ const createVNPayTopUpLinkService = async (userId, amount, ipAddr, targetWallet 
                 }
 
                 const profile = await HandymanProfile.findOne({ where: { user_id: userId } });
-                if (!profile || profile.handyman_level !== 'C2') {
+                if (!profile || profile.handyman_level !== 'C1') {
                     return { 
-                        EM: "You must pass KYC review (Level C2) before depositing the security bond.", 
+                        EM: "You must pass KYC review (Level C1) before depositing the security bond.", 
                         EC: 403, 
                         DT: "" 
                     };
@@ -167,7 +167,7 @@ const handleVNPayIPNService = async (vnpayParams) => {
 
                     if (pendingTransaction.transaction_type === 'BONDING_DEPOSIT') {
                         await HandymanProfile.update(
-                            { security_bond_status: 'PAID', handyman_level: 'C3' },
+                            { security_bond_status: 'PAID', handyman_level: 'C2' },
                             { where: { user_id: wallet.user_id }, transaction: trans }
                         );
                     }

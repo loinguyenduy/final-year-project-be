@@ -37,15 +37,9 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
                   DT: "" 
                 };
             }
-            // Kiểm tra điều kiện C1 và trạng thái ký quỹ
+            // Kiểm tra điều kiện C2 và trạng thái ký quỹ
             const profile = await HandymanProfile.findOne({ where: { user_id: userId } });
-            if (!profile || profile.handyman_level !== 'C1') {
-                return { 
-                  EM: "You must pass KYC review (Level C1) before depositing the security bond.", 
-                  EC: 403, 
-                  DT: "" 
-                };
-            }
+
             if (profile.security_bond_status === 'PAID') {
                 return { 
                   EM: "Security bond is already paid.", 
@@ -53,6 +47,15 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
                   DT: "" 
                 };
             }
+            
+            if (!profile || profile.handyman_level !== 'C2') {
+                return { 
+                  EM: "You must pass KYC review (Level C2) before depositing the security bond.", 
+                  EC: 403, 
+                  DT: "" 
+                };
+            }
+            
         } else {
             walletType = "HANDYMAN_MAIN";
         }
@@ -146,10 +149,10 @@ const handlePayOSWebhookService = async (webhookData) => {
             
             if (pendingTransaction.transaction_type === 'BONDING_DEPOSIT') {
                 await HandymanProfile.update(
-                    { security_bond_status: 'PAID', handyman_level: 'C2' },
+                    { security_bond_status: 'PAID', handyman_level: 'C3' },
                     { where: { user_id: wallet.user_id }, transaction: trans }
                 );
-                console.log(`>>> Handyman ${wallet.user_id} bonded successfully. Upgraded to C2.`);
+                console.log(`>>> Handyman ${wallet.user_id} bonded successfully. Upgraded to C3.`);
             }
 
             console.log(">>> PayOS Webhook: Wallet and Transaction updated successfully!");

@@ -2,6 +2,7 @@ import User from '../models/User.model.js';
 import HandymanProfile from '../models/HandymanProfile.model.js';
 import Wallet from '../../fintech/models/Wallet.model.js';
 import AuthProvider from '../models/AuthProvider.model.js';
+import KycRequest from '../models/KycRequest.model.js';
 
 const getDetailedProfileService = async (userId) => {
     try {
@@ -19,6 +20,11 @@ const getDetailedProfileService = async (userId) => {
                 {
                     model: AuthProvider,
                     attributes: ['id', 'provider']
+                },
+                {
+                    model: KycRequest,
+                    as: 'KycDocuments',
+                    attributes: ['id', 'document_type', 'document_url', 'status', 'reviewed_at', 'createdAt']
                 }
             ]
         });

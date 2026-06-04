@@ -37,4 +37,24 @@ const uploadKycMiddleware = multer({
   { name: 'certificate', maxCount: 1 }
 ]);
 
-export { cloudinary, uploadKycMiddleware };
+// Config Cloudinary Storage for Job Photos
+const jobStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: async (req, file) => {
+    const userId = req.user.id; 
+    return {
+      folder: `final_year_project/jobs/${userId}`, // Create a folder for each user's jobs
+      allowed_formats: ['jpg', 'jpeg', 'png'],
+      // Unique name format for job images
+      public_id: `job_${Date.now()}_${Math.round(Math.random() * 1e9)}`, 
+    };
+  },
+});
+
+// Middleware to handle Job photo uploads (max 5 images)
+const uploadJobImagesMiddleware = multer({ 
+  storage: jobStorage,
+  limits: { fileSize: 5 * 1024 * 1024 } 
+}).array('images', 5);
+
+export { cloudinary, uploadKycMiddleware, uploadJobImagesMiddleware };

@@ -10,6 +10,7 @@ import VerificationToken from "../models/VerificationToken.model.js";
 import { sendVerificationEmail } from "../../../core/utils/mail.util.js";
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
 import HandymanProfile from "../models/HandymanProfile.model.js";
+import Wallet from '../../fintech/models/Wallet.model.js';
 
 const hashUserPassword = async (userPassword) => {
   const salt = await bcrypt.genSalt(10);
@@ -132,6 +133,16 @@ const handleLoginUser = async (inputUserData) => {
           { phone_number: inputUserData.valueLogin },
         ],
       },
+      include: [
+        {
+          model: HandymanProfile,
+          attributes: ['handyman_level', 'bayesian_score', 'total_jobs_completed', 'security_bond_status']
+        },
+        {
+          model: Wallet,
+          attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked']
+        }
+      ]
     });
 
     if (!user) {

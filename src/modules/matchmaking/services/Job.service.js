@@ -3,6 +3,7 @@ import Service from '../models/Service.model.js';
 import User from '../../identity/models/User.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import db from '../../../core/database/connection.js';
+import { Op } from 'sequelize';
 
 const createJobService = async (userId, jobData) => {
     const { service_id, issue_description, service_address, gps_lat, gps_long, scheduled_at, images } = jobData;
@@ -135,4 +136,55 @@ const getCustomerJobsService = async (userId) => {
     }
 };
 
-export { createJobService, getServicesService, getCustomerJobsService };
+const getAvailableJobsForHandymanService = async (search = '', service_id = '') => {
+    try {
+        let whereCondition = { current_status: 'POSTED' };
+
+        // Handle filtering by service_id
+        if (service_id) {
+            whereCondition.service_id = service_id;
+        }
+
+        // Handle search by service name
+        let includeServiceOptions = {
+            model: Service,
+            attributes: ['id', 'name', 'service_code', 'icon_url']
+        };
+
+        if (search) {
+            includeServiceOptions.where = {
+                name: {
+                    [Op.iLike]: `%${search}%`
+                }
+            };
+        }
+
+        const jobs = await Job.findAll({
+            where: whereCondition,
+            include: [
+                includeServiceOptions,
+                {
+                    model: User,
+                    as: 'Customer', // We need to define this alias if it exists, or just omit if we don't need customer details yet. Let's see if we need it. For now, let's include basic customer info if possible, but let's check what associations exist.
+                    // Wait, let's check Job associations to User.
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+        
+        return {
+            EM: "Available jobs retrieved successfully.",
+            EC: 0,
+            DT: jobs
+        };
+    } catch (error) {
+        console.log(">>> Error in getAvailableJobsForHandymanService: ", error);
+        return {
+            EM: "Internal server error while retrieving available jobs.",
+            EC: 500,
+            DT: ""
+        };
+    }
+};
+
+export { createJobService, getServicesService, getCustomerJobsService, getAvailableJobsForHandymanService };

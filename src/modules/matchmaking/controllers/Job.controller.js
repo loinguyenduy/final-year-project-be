@@ -27,14 +27,7 @@ const handleCreateJob = async (req, res) => {
             images
         });
 
-        // Determine correct status code based on result.EC
-        let statusCode = 200;
-        if (result.EC === 404) statusCode = 404;
-        else if (result.EC === 403) statusCode = 403;
-        else if (result.EC === 400) statusCode = 400;
-        else if (result.EC === 500) statusCode = 500;
-
-        return res.status(statusCode).json({
+        return res.status(result.EC === 0 ? 200 : 500).json({
             EM: result.EM,
             EC: result.EC,
             DT: result.DT

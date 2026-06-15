@@ -120,7 +120,7 @@ const initDatabase = async () => {
     try {
         await db.authenticate();
         console.log('Connection to PostgreSQL has been established successfully.');
-        await db.sync({ alter: true });        
+        // await db.sync({ alter: true });        
         console.log('All models were synchronized successfully.');
     } catch (error) {
         console.error('Unable to connect to the database:', error);

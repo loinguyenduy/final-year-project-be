@@ -43,25 +43,4 @@ const getWardsByProvinceService = async (provinceCode) => {
     }
 };
 
-const getServicesCategoryService = async () => {
-    try {
-        const services = await Service.findAll({
-            where: { is_active: true },
-            order: [['name', 'ASC']]
-        });
-        return {
-            EM: "Services list retrieved successfully.",
-            EC: 0,
-            DT: services
-        };
-    } catch (error) {
-        console.log(">>> Error in getServicesCategoryService: ", error);
-        return {
-            EM: "Internal server error while retrieving services.",
-            EC: 500,
-            DT: []
-        };
-    }
-};
-
-export { getProvincesService, getWardsByProvinceService, getServicesCategoryService };
+export { getProvincesService, getWardsByProvinceService };

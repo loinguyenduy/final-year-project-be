@@ -1,4 +1,4 @@
-import { getProvincesService, getWardsByProvinceService, getServicesCategoryService } from '../services/Location.service.js';
+import { getProvincesService, getWardsByProvinceService } from '../services/Location.service.js';
 
 const handleGetProvinces = async (req, res) => {
     try {
@@ -42,22 +42,4 @@ const handleGetWards = async (req, res) => {
     }
 };
 
-const handleGetServices = async (req, res) => {
-    try {
-        const result = await getServicesCategoryService();
-        return res.status(result.EC === 0 ? 200 : 500).json({
-            EM: result.EM,
-            EC: result.EC,
-            DT: result.DT
-        });
-    } catch (error) {
-        console.log(">>> Error in handleGetServices controller: ", error);
-        return res.status(500).json({ 
-          EM: "Internal server error.", 
-          EC: 500, 
-          DT: "" 
-        });
-    }
-};
-
-export { handleGetProvinces, handleGetWards, handleGetServices };
+export { handleGetProvinces, handleGetWards };

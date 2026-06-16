@@ -1,7 +1,8 @@
 import express from 'express';
 import { handleCreateJob, handleGetCustomerJobs } from '../controllers/CustomerJob.controller.js';
 import { handleGetAvailableJobs } from '../controllers/HandymanJob.controller.js';
-import { handleGetProvinces, handleGetWards, handleGetServices } from '../controllers/Location.controller.js'; // Thêm ở đây
+import { handleGetJobDetails, handleGetServices } from '../controllers/Job.controller.js';
+import { handleGetProvinces, handleGetWards } from '../controllers/Location.controller.js';
 import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
 import { uploadJobImagesMiddleware } from '../../../core/config/cloudinary.config.js';
 
@@ -18,5 +19,8 @@ router.get('/jobs', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetCustomer
 
 // HANDYMAN JOB 
 router.get('/jobs/available', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetAvailableJobs);
+
+// COMMON JOB
+router.get('/jobs/:id', checkUserJWT, handleGetJobDetails);
 
 export default router;

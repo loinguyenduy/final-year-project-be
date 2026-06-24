@@ -77,7 +77,7 @@ const getDetailedProfileService = async (userId) => {
 
 // ─── SECTION 1: ADDRESS ──────────────────────────────────────────────────────
 
-const updateHandymanAddressService = async (userId, { province_code, ward_code, detail_address }) => {
+const updateUserAddressService = async (userId, { province_code, ward_code, detail_address }) => {
     try {
         const province = await Province.findOne({ where: { province_code } });
         if (!province) {
@@ -111,7 +111,7 @@ const updateHandymanAddressService = async (userId, { province_code, ward_code, 
         return { EM: "Address updated successfully.", EC: 0, DT: result };
 
     } catch (error) {
-        console.error(">>> Error in updateHandymanAddressService: ", error);
+        console.error(">>> Error in updateUserAddressService: ", error);
         return { EM: "Internal server error while updating address.", EC: 500, DT: "" };
     }
 };
@@ -312,7 +312,7 @@ const updateHandymanWorkTimesService = async (userId, preferred_work_times) => {
 
 export {
     getDetailedProfileService,
-    updateHandymanAddressService,
+    updateUserAddressService,
     updateHandymanBioService,
     getHandymanServicesService,
     addHandymanServiceService,

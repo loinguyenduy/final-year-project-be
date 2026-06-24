@@ -193,4 +193,66 @@ const upsertFacebookUser = async (facebookProfile) => {
   }
 };
 
-export { upsertGoogleUser, upsertFacebookUser };
+// ─── ACCOUNT LINKING ─────────────────────────────────────────────────────────
+// Link an existing account to a Google or Facebook provider.
+// Called after the OAuth flow when the user is already logged in.
+
+const linkGoogleProvider = async (userId, googleProfile) => {
+    try {
+        const providerId = googleProfile.id;
+
+        const alreadyLinkedToMe = await AuthProvider.findOne({
+            where: { user_id: userId, provider: 'GOOGLE' }
+        });
+        if (alreadyLinkedToMe) {
+            return { EM: "Google is already linked to your account.", EC: 400, DT: "" };
+        }
+
+        const linkedToOther = await AuthProvider.findOne({
+            where: { provider: 'GOOGLE', provider_id: providerId }
+        });
+        if (linkedToOther) {
+            return { EM: "This Google account is already linked to another user.", EC: 400, DT: "" };
+        }
+
+        await AuthProvider.create({ user_id: userId, provider: 'GOOGLE', provider_id: providerId });
+
+        return { EM: "Google linked successfully.", EC: 0, DT: "" };
+    } catch (error) {
+        console.error(">>> Error in linkGoogleProvider: ", error);
+        return { EM: "Internal server error while linking Google account.", EC: 500, DT: "" };
+    }
+};
+
+const linkFacebookProvider = async (userId, facebookProfile) => {
+    try {
+        if (!facebookProfile.emails || facebookProfile.emails.length === 0) {
+            return { EM: "Facebook account must have an email to be linked.", EC: 400, DT: "" };
+        }
+
+        const providerId = facebookProfile.id;
+
+        const alreadyLinkedToMe = await AuthProvider.findOne({
+            where: { user_id: userId, provider: 'FACEBOOK' }
+        });
+        if (alreadyLinkedToMe) {
+            return { EM: "Facebook is already linked to your account.", EC: 400, DT: "" };
+        }
+
+        const linkedToOther = await AuthProvider.findOne({
+            where: { provider: 'FACEBOOK', provider_id: providerId }
+        });
+        if (linkedToOther) {
+            return { EM: "This Facebook account is already linked to another user.", EC: 400, DT: "" };
+        }
+
+        await AuthProvider.create({ user_id: userId, provider: 'FACEBOOK', provider_id: providerId });
+
+        return { EM: "Facebook linked successfully.", EC: 0, DT: "" };
+    } catch (error) {
+        console.error(">>> Error in linkFacebookProvider: ", error);
+        return { EM: "Internal server error while linking Facebook account.", EC: 500, DT: "" };
+    }
+};
+
+export { upsertGoogleUser, upsertFacebookUser, linkGoogleProvider, linkFacebookProvider };

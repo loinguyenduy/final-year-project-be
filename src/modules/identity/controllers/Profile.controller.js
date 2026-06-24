@@ -1,6 +1,6 @@
 import {
     getDetailedProfileService,
-    updateHandymanAddressService,
+    updateUserAddressService,
     updateHandymanBioService,
     getHandymanServicesService,
     addHandymanServiceService,
@@ -24,8 +24,8 @@ const handleGetUserProfile = async (req, res) => {
     }
 };
 
-// Section 1 — Address
-const handleUpdateHandymanAddress = async (req, res) => {
+// Section 1 — Address (generic, works for all roles)
+const handleUpdateUserAddress = async (req, res) => {
     try {
         const userId = req.user.id;
         const { province_code, ward_code, detail_address } = req.body;
@@ -37,12 +37,12 @@ const handleUpdateHandymanAddress = async (req, res) => {
             });
         }
 
-        const result = await updateHandymanAddressService(userId, { province_code, ward_code, detail_address });
+        const result = await updateUserAddressService(userId, { province_code, ward_code, detail_address });
         return res.status(result.EC === 0 ? 200 : result.EC).json({
             EM: result.EM, EC: result.EC, DT: result.DT
         });
     } catch (error) {
-        console.error(">>> Error in handleUpdateHandymanAddress: ", error);
+        console.error(">>> Error in handleUpdateUserAddress: ", error);
         return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
     }
 };
@@ -185,7 +185,7 @@ const handleUpdateHandymanWorkTimes = async (req, res) => {
 
 export {
     handleGetUserProfile,
-    handleUpdateHandymanAddress,
+    handleUpdateUserAddress,
     handleUpdateHandymanBio,
     handleGetHandymanServices,
     handleAddHandymanService,

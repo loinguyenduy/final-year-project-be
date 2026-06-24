@@ -1,7 +1,7 @@
 import express from 'express';
 import {
     handleGetUserProfile,
-    handleUpdateHandymanAddress,
+    handleUpdateUserAddress,
     handleUpdateHandymanBio,
     handleGetHandymanServices,
     handleAddHandymanService,
@@ -17,8 +17,8 @@ const router = express.Router();
 
 router.get('/profile', checkUserJWT, handleGetUserProfile);
 
-// Section 1 — Address
-router.put('/profile/handyman/address', checkUserJWT, checkUserRole(['HANDYMAN']), handleUpdateHandymanAddress);
+// Section 1 — Address (shared by all roles)
+router.put('/profile/address', checkUserJWT, handleUpdateUserAddress);
 
 // Section 2 — Bio & Services
 router.put('/profile/handyman/bio', checkUserJWT, checkUserRole(['HANDYMAN']), handleUpdateHandymanBio);

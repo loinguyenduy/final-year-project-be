@@ -18,9 +18,17 @@ const HandymanProfile = db.define('Handyman_Profile', {
         type: DataTypes.ENUM('UNPAID', 'PAID', 'REFUNDED'), 
         defaultValue: 'UNPAID' 
     },
-    handyman_level: { 
-        type: DataTypes.ENUM('C0', 'C1', 'C2', 'C3'), 
-        defaultValue: 'C0' 
+    handyman_level: {
+        type: DataTypes.ENUM('C0', 'C1', 'C2', 'C3'),
+        defaultValue: 'C0'
+    },
+    bio: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    preferred_work_times: {
+        type: DataTypes.JSON,
+        defaultValue: [],
     },
 }, { timestamps: true });
 

@@ -14,6 +14,8 @@ import Service from '../../modules/matchmaking/models/Service.model.js';
 import Job from '../../modules/matchmaking/models/Job.model.js';
 import Bid from '../../modules/matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../modules/matchmaking/models/JobStatusHistory.model.js';
+import HandymanService from '../../modules/matchmaking/models/HandymanService.model.js';
+import HandymanServiceArea from '../../modules/matchmaking/models/HandymanServiceArea.model.js';
 
 import Wallet from '../../modules/fintech/models/Wallet.model.js';
 import Transaction from '../../modules/fintech/models/Transaction.model.js';
@@ -61,7 +63,20 @@ Job.belongsTo(Province, { foreignKey: 'province_code', targetKey: 'province_code
 Ward.hasMany(Job, { foreignKey: 'ward_code', sourceKey: 'ward_code' });
 Job.belongsTo(Ward, { foreignKey: 'ward_code', targetKey: 'ward_code' });
 
-// C. MATCHMAKING (JOBS, SERVICES, BIDS)
+// C. HANDYMAN SPECIALIZATIONS & SERVICE AREAS
+User.hasMany(HandymanService, { as: 'Handyman_Services', foreignKey: 'handyman_id' });
+HandymanService.belongsTo(User, { foreignKey: 'handyman_id' });
+Service.hasMany(HandymanService, { foreignKey: 'service_id' });
+HandymanService.belongsTo(Service, { foreignKey: 'service_id' });
+
+User.hasMany(HandymanServiceArea, { as: 'Handyman_Service_Areas', foreignKey: 'handyman_id' });
+HandymanServiceArea.belongsTo(User, { foreignKey: 'handyman_id' });
+Province.hasMany(HandymanServiceArea, { foreignKey: 'province_code', sourceKey: 'province_code' });
+HandymanServiceArea.belongsTo(Province, { foreignKey: 'province_code', targetKey: 'province_code' });
+Ward.hasMany(HandymanServiceArea, { foreignKey: 'ward_code', sourceKey: 'ward_code' });
+HandymanServiceArea.belongsTo(Ward, { foreignKey: 'ward_code', targetKey: 'ward_code' });
+
+// D. MATCHMAKING (JOBS, SERVICES, BIDS)
 Service.hasMany(Job, { foreignKey: 'service_id' });
 Job.belongsTo(Service, { foreignKey: 'service_id' });
 
@@ -120,7 +135,7 @@ const initDatabase = async () => {
     try {
         await db.authenticate();
         console.log('Connection to PostgreSQL has been established successfully.');
-        // await db.sync({ alter: true });        
+        // await db.sync({ alter: true });
         console.log('All models were synchronized successfully.');
     } catch (error) {
         console.error('Unable to connect to the database:', error);

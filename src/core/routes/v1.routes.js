@@ -5,7 +5,7 @@ import fintechRoutes from '../../modules/fintech/routes/fintech.routes.js';
 import kycRoutes from '../../modules/identity/routes/Kyc.routes.js';
 import adminRoutes from '../../modules/admin/routes/Admin.routes.js';
 import profileRoutes from '../../modules/identity/routes/Profile.routes.js';
-import matchmakingRoutes from '../../modules/matchmaking/routes/Job.routes.js';
+import matchmakingRoutes from '../../modules/matchmaking/routes/matchmaking.routes.js';
 
 const router = express.Router();
 

@@ -162,6 +162,11 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                     return (parseFloat(b.estimated_budget_max) || 0) - (parseFloat(a.estimated_budget_max) || 0);
                 case 'budget_asc':
                     return (parseFloat(a.estimated_budget_max) || 0) - (parseFloat(b.estimated_budget_max) || 0);
+                case 'scheduled_asc':
+                    if (!a.scheduled_at && !b.scheduled_at) return 0;
+                    if (!a.scheduled_at) return 1;
+                    if (!b.scheduled_at) return -1;
+                    return new Date(a.scheduled_at) - new Date(b.scheduled_at);
                 case 'newest':
                 default:
                     return new Date(b.createdAt) - new Date(a.createdAt);

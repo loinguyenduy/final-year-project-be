@@ -6,6 +6,7 @@ import Province from '../models/Province.model.js';
 import Ward from '../models/Ward.model.js';
 import UserAddress from '../../identity/models/UserAddress.model.js';
 import db from '../../../core/database/connection.js';
+import { Op } from 'sequelize';
 
 const createJobService = async (userId, jobData) => {
     const { 
@@ -83,20 +84,73 @@ const createJobService = async (userId, jobData) => {
         } else if (address_option === 3) {
             try {
                 const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${gps_lat}&lon=${gps_long}&zoom=18&addressdetails=1`;
-                const response = await fetch(url, { headers: { 'User-Agent': 'FinalYearProjectBE/1.0' } });
+                const response = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'FinalYearProjectBE/1.0',
+                        'Accept-Language': 'vi'   // request Vietnamese names for reliable Province/Ward matching
+                    }
+                });
                 const data = await response.json();
-                
+
                 if (data && data.address) {
                     const addr = data.address;
-                    // Lọc lấy các thông tin cốt lõi
+
+                    // Build human-readable address text
                     const parts = [];
                     if (addr.house_number) parts.push(addr.house_number);
                     if (addr.road) parts.push(addr.road);
                     if (addr.suburb) parts.push(addr.suburb);
                     if (addr.city_district) parts.push(addr.city_district);
                     if (addr.city || addr.state) parts.push(addr.city || addr.state);
-                    
                     final_service_address = parts.length > 0 ? parts.join(', ') : data.display_name;
+
+                    // Resolve Province and Ward from Nominatim fields — best effort, non-blocking
+                    // Province.short_name = "Hà Nội", Nominatim city = "Hà Nội" → direct match
+                    // Ward.name = "Phường Ba Đình", Nominatim suburb = "Phường Ba Đình" → exact or partial match
+                    try {
+                        const cityName = addr.city || addr.state;
+                        if (cityName) {
+                            let province = await Province.findOne({
+                                where: { short_name: cityName },
+                                transaction: trans
+                            });
+                            if (!province) {
+                                province = await Province.findOne({
+                                    where: { name: { [Op.iLike]: `%${cityName}%` } },
+                                    transaction: trans
+                                });
+                            }
+
+                            if (province) {
+                                final_province_code = province.province_code;
+
+                                // Try suburb first (phường/xã level), then city_district as fallback
+                                const wardCandidates = [addr.suburb, addr.city_district].filter(Boolean);
+                                for (const candidate of wardCandidates) {
+                                    let ward = await Ward.findOne({
+                                        where: { name: candidate, province_code: province.province_code },
+                                        transaction: trans
+                                    });
+                                    if (!ward) {
+                                        ward = await Ward.findOne({
+                                            where: {
+                                                province_code: province.province_code,
+                                                name: { [Op.iLike]: `%${candidate}%` }
+                                            },
+                                            transaction: trans
+                                        });
+                                    }
+                                    if (ward) {
+                                        final_ward_code = ward.ward_code;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (geoMatchErr) {
+                        // Non-critical — job creation continues even if province/ward lookup fails
+                        console.warn('Province/Ward lookup from GPS failed:', geoMatchErr.message);
+                    }
                 } else {
                     final_service_address = "Unknown Location";
                 }

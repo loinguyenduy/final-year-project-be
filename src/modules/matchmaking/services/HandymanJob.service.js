@@ -7,9 +7,8 @@ import HandymanServiceArea from '../models/HandymanServiceArea.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import User from '../../identity/models/User.model.js';
 import { Op } from 'sequelize';
-import db from '../../../core/database/connection.js';
 
-// Haversine formula — returns distance in km between two GPS coordinates
+// Haversine formula — returns distance in km
 const haversine = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const toRad = x => (x * Math.PI) / 180;
@@ -20,27 +19,34 @@ const haversine = (lat1, lon1, lat2, lon2) => {
     return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
 };
 
-// Build a PostgreSQL literal for preferred_work_times filtering.
-// Uses Vietnam timezone (UTC+7) for correct morning/afternoon/evening boundaries.
-// Jobs with null scheduled_at (flexible) always pass through.
-const buildWorkTimeCondition = (preferred_work_times) => {
-    if (!preferred_work_times || preferred_work_times.length === 0) return null;
+// Work time check in Vietnam timezone (UTC+7)
+// Returns true if the job's scheduled time falls in any of the handyman's preferred slots.
+// Jobs with null scheduled_at (flexible timing) always pass.
+const matchesWorkTime = (scheduledAt, preferred_work_times) => {
+    if (!scheduledAt) return true;
+    if (!preferred_work_times || preferred_work_times.length === 0) return true;
 
-    const slots = [];
-    if (preferred_work_times.includes('MORNING'))
-        slots.push(`(EXTRACT(HOUR FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') >= 6 AND EXTRACT(HOUR FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') < 12)`);
-    if (preferred_work_times.includes('AFTERNOON'))
-        slots.push(`(EXTRACT(HOUR FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') >= 12 AND EXTRACT(HOUR FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') < 18)`);
-    if (preferred_work_times.includes('EVENING'))
-        slots.push(`(EXTRACT(HOUR FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') >= 18 AND EXTRACT(HOUR FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') < 22)`);
-    if (preferred_work_times.includes('WEEKEND'))
-        slots.push(`(EXTRACT(DOW FROM "scheduled_at" AT TIME ZONE 'Asia/Ho_Chi_Minh') IN (0, 6))`);
+    // toLocaleString converts the UTC timestamp to Vietnam local time
+    const vnDateStr = new Date(scheduledAt).toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const vnDate = new Date(vnDateStr);
+    const hour = vnDate.getHours();
+    const dow = vnDate.getDay(); // 0 = Sunday, 6 = Saturday
 
-    if (slots.length === 0) return null;
-    return db.literal(`("scheduled_at" IS NULL OR (${slots.join(' OR ')}))`);
+    if (preferred_work_times.includes('MORNING') && hour >= 6 && hour < 12) return true;
+    if (preferred_work_times.includes('AFTERNOON') && hour >= 12 && hour < 18) return true;
+    if (preferred_work_times.includes('EVENING') && hour >= 18 && hour < 22) return true;
+    if (preferred_work_times.includes('WEEKEND') && (dow === 0 || dow === 6)) return true;
+
+    return false;
 };
 
-const getAvailableJobsForHandymanService = async (handymanId, { search = '', service_id = '', current_lat = null, current_long = null } = {}) => {
+const getAvailableJobsForHandymanService = async (handymanId, {
+    search = '',
+    service_id = '',
+    current_lat = null,
+    current_long = null,
+    sort_by = ''
+} = {}) => {
     try {
         // Step 1: Fetch handyman profile data in parallel
         const [handymanServices, serviceAreas, handymanProfile] = await Promise.all([
@@ -52,54 +58,46 @@ const getAvailableJobsForHandymanService = async (handymanId, { search = '', ser
         const serviceIds = handymanServices.map(s => s.service_id);
         const preferred_work_times = handymanProfile?.preferred_work_times ?? [];
 
-        // Step 2: Build WHERE clause using Op.and to combine all filter criteria
+        // Step 2: Build SQL WHERE clause
         const andConditions = [
             { current_status: { [Op.in]: ['POSTED', 'BIDDING'] } }
         ];
 
-        // Specialty/service filter — explicit service_id param overrides profile specialties
+        // Specialty filter — explicit service_id param overrides profile specialties
         if (service_id) {
             andConditions.push({ service_id });
         } else if (serviceIds.length > 0) {
             andConditions.push({ service_id: { [Op.in]: serviceIds } });
         }
-        // If neither, no service filter — show all categories
 
-        // Service area filter — province-level (ward_code null) covers entire province
+        // Service area filter
+        // Jobs with province_code = null (posted via GPS without manual province selection)
+        // are always included since their location cannot be determined for filtering.
         if (serviceAreas.length > 0) {
-            andConditions.push({
-                [Op.or]: serviceAreas.map(area =>
+            const areaOrConditions = [
+                { province_code: null },
+                ...serviceAreas.map(area =>
                     area.ward_code
                         ? { province_code: area.province_code, ward_code: area.ward_code }
                         : { province_code: area.province_code }
                 )
-            });
+            ];
+            andConditions.push({ [Op.or]: areaOrConditions });
         }
 
-        // Preferred work time filter
-        const workTimeCondition = buildWorkTimeCondition(preferred_work_times);
-        if (workTimeCondition) {
-            andConditions.push(workTimeCondition);
-        }
-
-        // Step 3: Service include — optional name search
-        const serviceInclude = {
-            model: Service,
-            attributes: ['id', 'name', 'service_code', 'icon_url']
-        };
-        if (search) {
-            serviceInclude.where = { name: { [Op.iLike]: `%${search}%` } };
-        }
-
+        // Step 3: Fetch matching jobs
         const jobs = await Job.findAll({
             where: { [Op.and]: andConditions },
             include: [
-                serviceInclude,
+                {
+                    model: Service,
+                    attributes: ['id', 'name', 'service_code', 'icon_url']
+                },
                 {
                     model: User,
                     as: 'Customer',
                     attributes: ['id', 'full_name', 'avatar_url']
-                    // phone is intentionally excluded — revealed only at ACCEPTED+ in job detail
+                    // phone_number intentionally excluded — revealed at ACCEPTED+ in job detail only
                 },
                 {
                     model: Province,
@@ -115,37 +113,60 @@ const getAvailableJobsForHandymanService = async (handymanId, { search = '', ser
             order: [['createdAt', 'DESC']]
         });
 
-        // Step 4: Post-process each job — distance + mask sensitive fields
-        const processed = jobs.map(job => {
-            const data = job.toJSON();
+        // Step 4: Post-process — distance, work time filter (JS), address masking, search
+        const searchLower = search.toLowerCase();
 
-            // Distance calculation (requires both parties to have GPS coordinates)
-            if (current_lat != null && current_long != null && data.gps_lat != null && data.gps_long != null) {
-                data.distance_km = haversine(current_lat, current_long, parseFloat(data.gps_lat), parseFloat(data.gps_long));
-            } else {
-                data.distance_km = null;
-            }
+        const processed = jobs
+            .map(job => {
+                const data = job.toJSON();
 
-            // Mask precise location for POSTED and BIDDING to prevent off-platform contact
-            if (['POSTED', 'BIDDING'].includes(data.current_status)) {
-                data.detail_address = null;
-                const wardName = data.Ward?.name ?? '';
-                const provinceName = data.Province?.name ?? '';
-                data.service_address = [wardName, provinceName].filter(Boolean).join(', ');
-            }
+                // Distance
+                if (current_lat != null && current_long != null && data.gps_lat != null && data.gps_long != null) {
+                    data.distance_km = haversine(current_lat, current_long, parseFloat(data.gps_lat), parseFloat(data.gps_long));
+                } else {
+                    data.distance_km = null;
+                }
 
-            return data;
-        });
+                // Mask precise location for POSTED/BIDDING to prevent off-platform contact
+                if (['POSTED', 'BIDDING'].includes(data.current_status)) {
+                    data.detail_address = null;
+                    const wardName = data.Ward?.name ?? '';
+                    const provinceName = data.Province?.name ?? '';
+                    data.service_address = [wardName, provinceName].filter(Boolean).join(', ');
+                }
 
-        // Step 5: Sort by distance ascending — jobs without GPS coordinates go to the end
-        if (current_lat != null && current_long != null) {
-            processed.sort((a, b) => {
-                if (a.distance_km === null && b.distance_km === null) return 0;
-                if (a.distance_km === null) return 1;
-                if (b.distance_km === null) return -1;
-                return a.distance_km - b.distance_km;
+                return data;
+            })
+            // Work time filter in JS (reliable, avoids db.literal timezone complexities)
+            .filter(data => matchesWorkTime(data.scheduled_at, preferred_work_times))
+            // Search: across issue description and service name
+            .filter(data => {
+                if (!search) return true;
+                const matchesDesc = data.issue_description?.toLowerCase().includes(searchLower);
+                const matchesService = data.Service?.name?.toLowerCase().includes(searchLower);
+                return matchesDesc || matchesService;
             });
-        }
+
+        // Step 5: Sort
+        const hasGPS = current_lat != null && current_long != null;
+        const effectiveSortBy = sort_by || (hasGPS ? 'distance' : 'newest');
+
+        processed.sort((a, b) => {
+            switch (effectiveSortBy) {
+                case 'distance':
+                    if (a.distance_km === null && b.distance_km === null) return 0;
+                    if (a.distance_km === null) return 1;
+                    if (b.distance_km === null) return -1;
+                    return a.distance_km - b.distance_km;
+                case 'budget_desc':
+                    return (parseFloat(b.estimated_budget_max) || 0) - (parseFloat(a.estimated_budget_max) || 0);
+                case 'budget_asc':
+                    return (parseFloat(a.estimated_budget_max) || 0) - (parseFloat(b.estimated_budget_max) || 0);
+                case 'newest':
+                default:
+                    return new Date(b.createdAt) - new Date(a.createdAt);
+            }
+        });
 
         return {
             EM: "Available jobs retrieved successfully.",

@@ -3,6 +3,7 @@ import Service from '../models/Service.model.js';
 import User from '../../identity/models/User.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import Bid from '../models/Bid.model.js';
+import db from '../../../core/database/connection.js';
 
 const getServicesCategoryService = async () => {
     try {
@@ -37,7 +38,13 @@ const getJobDetailsByIdService = async (jobId) => {
                 {
                     model: User,
                     as: 'Customer',
-                    attributes: ['id', 'full_name', 'avatar_url', 'phone_number']
+                    attributes: [
+                        'id', 'full_name', 'avatar_url', 'phone_number', 'kyc_status',
+                        [
+                            db.literal(`(SELECT COALESCE(ROUND(AVG(r.rating_stars::numeric), 1), 0) FROM "Reviews" r WHERE r.reviewee_id = "Customer"."id")`),
+                            'avg_rating'
+                        ]
+                    ]
                 },
                 {
                     model: User,

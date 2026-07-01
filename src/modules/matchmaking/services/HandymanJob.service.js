@@ -7,6 +7,7 @@ import HandymanServiceArea from '../models/HandymanServiceArea.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import User from '../../identity/models/User.model.js';
 import { Op } from 'sequelize';
+import db from '../../../core/database/connection.js';
 
 // Haversine formula — returns distance in km
 const haversine = (lat1, lon1, lat2, lon2) => {
@@ -96,7 +97,13 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                 {
                     model: User,
                     as: 'Customer',
-                    attributes: ['id', 'full_name', 'avatar_url']
+                    attributes: [
+                        'id', 'full_name', 'avatar_url', 'kyc_status',
+                        [
+                            db.literal(`(SELECT COALESCE(ROUND(AVG(r.rating_stars::numeric), 1), 0) FROM "Reviews" r WHERE r.reviewee_id = "Customer"."id")`),
+                            'avg_rating'
+                        ]
+                    ]
                     // phone_number intentionally excluded — revealed at ACCEPTED+ in job detail only
                 },
                 {

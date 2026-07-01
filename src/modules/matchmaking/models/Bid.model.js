@@ -5,7 +5,12 @@ const Bid = db.define('Bid', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     proposed_price: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     message: { type: DataTypes.TEXT },
-    status: { type: DataTypes.ENUM('PENDING', 'WON', 'LOST'), defaultValue: 'PENDING' }
+    eta: { type: DataTypes.DATE, allowNull: true },
+    estimated_duration_hours: { type: DataTypes.FLOAT, allowNull: true },
+    status: {
+        type: DataTypes.ENUM('PENDING', 'WON', 'LOST', 'WITHDRAWN'),
+        defaultValue: 'PENDING'
+    }
 }, { timestamps: true });
 
 export default Bid;

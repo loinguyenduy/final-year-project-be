@@ -89,6 +89,14 @@ const getAvailableJobsForHandymanService = async (handymanId, {
         // Step 3: Fetch matching jobs
         const jobs = await Job.findAll({
             where: { [Op.and]: andConditions },
+            attributes: {
+                include: [
+                    [
+                        db.literal(`(SELECT COUNT(*) FROM "Bids" WHERE "Bids"."job_id" = "Job"."id" AND "Bids"."status" = 'PENDING')`),
+                        'active_bid_count'
+                    ]
+                ]
+            },
             include: [
                 {
                     model: Service,

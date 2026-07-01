@@ -1,9 +1,21 @@
+import { Op } from 'sequelize';
 import Job from '../models/Job.model.js';
 import Service from '../models/Service.model.js';
 import User from '../../identity/models/User.model.js';
+import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import Bid from '../models/Bid.model.js';
 import db from '../../../core/database/connection.js';
+
+const haversine = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const toRad = x => (x * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
+};
 
 const getServicesCategoryService = async () => {
     try {
@@ -26,8 +38,53 @@ const getServicesCategoryService = async () => {
     }
 };
 
-const getJobDetailsByIdService = async (jobId) => {
+const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = null, current_long = null } = {}) => {
     try {
+        // Build bid include based on the requesting user's role
+        let bidInclude;
+
+        if (requestingUser?.role === 'HANDYMAN') {
+            // Handyman sees only their own bid (no peeking at competitors)
+            bidInclude = {
+                model: Bid,
+                attributes: ['id', 'proposed_price', 'message', 'eta', 'estimated_duration_hours', 'status', 'createdAt', 'updatedAt'],
+                where: {
+                    handyman_id: requestingUser.id,
+                    status: { [Op.ne]: 'WITHDRAWN' }
+                },
+                required: false
+            };
+        } else if (requestingUser?.role === 'CUSTOMER') {
+            // Customer sees all active bids with handyman profile info
+            bidInclude = {
+                model: Bid,
+                attributes: ['id', 'proposed_price', 'message', 'eta', 'estimated_duration_hours', 'status', 'handyman_id', 'createdAt', 'updatedAt'],
+                where: { status: { [Op.ne]: 'WITHDRAWN' } },
+                required: false,
+                include: [
+                    {
+                        model: User,
+                        attributes: ['id', 'full_name', 'avatar_url', 'phone_number'],
+                        include: [
+                            {
+                                model: HandymanProfile,
+                                attributes: ['bayesian_score', 'total_jobs_completed', 'handyman_level'],
+                                required: false
+                            }
+                        ]
+                    }
+                ]
+            };
+        } else {
+            // ADMIN sees everything
+            bidInclude = {
+                model: Bid,
+                attributes: ['id', 'proposed_price', 'message', 'eta', 'estimated_duration_hours', 'status', 'handyman_id', 'createdAt'],
+                where: { status: { [Op.ne]: 'WITHDRAWN' } },
+                required: false
+            };
+        }
+
         const job = await Job.findOne({
             where: { id: jobId },
             include: [
@@ -60,10 +117,7 @@ const getJobDetailsByIdService = async (jobId) => {
                         }
                     ]
                 },
-                {
-                    model: Bid,
-                    attributes: ['id', 'proposed_price', 'message', 'status', 'handyman_id']
-                }
+                bidInclude
             ],
             order: [
                 [JobStatusHistory, 'createdAt', 'DESC']
@@ -74,10 +128,33 @@ const getJobDetailsByIdService = async (jobId) => {
             return { EM: "Job not found.", EC: 404, DT: "" };
         }
 
+        // Count total active bids for handyman context (without exposing details)
+        let responseData = job.toJSON();
+
+        if (requestingUser?.role === 'HANDYMAN') {
+            // Active bid count so handyman knows competition level
+            const activeBidCount = await Bid.count({
+                where: { job_id: jobId, status: 'PENDING' }
+            });
+            responseData.active_bid_count = activeBidCount;
+
+            // Distance from handyman's current location to job site
+            if (current_lat != null && current_long != null && responseData.gps_lat != null && responseData.gps_long != null) {
+                responseData.distance_km = haversine(
+                    parseFloat(current_lat),
+                    parseFloat(current_long),
+                    parseFloat(responseData.gps_lat),
+                    parseFloat(responseData.gps_long)
+                );
+            } else {
+                responseData.distance_km = null;
+            }
+        }
+
         return {
             EM: "Job details retrieved successfully.",
             EC: 0,
-            DT: job
+            DT: responseData
         };
     } catch (error) {
         console.log(">>> Error in getJobDetailsByIdService: ", error);

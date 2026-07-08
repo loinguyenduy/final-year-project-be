@@ -6,6 +6,7 @@ import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import Bid from '../models/Bid.model.js';
 import db from '../../../core/database/connection.js';
+import { buildMatchResultsForBids } from './CustomerHandymanSelection.service.js';
 
 const haversine = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
@@ -64,7 +65,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                 include: [
                     {
                         model: User,
-                        attributes: ['id', 'full_name', 'avatar_url', 'phone_number'],
+                        attributes: ['id', 'full_name', 'avatar_url', 'role', 'kyc_status'],
                         include: [
                             {
                                 model: HandymanProfile,
@@ -130,6 +131,31 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
 
         // Count total active bids for handyman context (without exposing details)
         let responseData = job.toJSON();
+
+        if (requestingUser?.role === 'CUSTOMER' && responseData.Bids?.length > 0) {
+            const pendingBids = job.Bids.filter((bid) => bid.status === 'PENDING');
+            const matchResults = await buildMatchResultsForBids(pendingBids, responseData.service_id);
+            const matchResultByBidId = new Map(matchResults.map((item) => [item.bid_id, item]));
+
+            responseData.Bids = responseData.Bids
+                .map((bid) => {
+                    const matchResult = matchResultByBidId.get(bid.id);
+                    if (!matchResult) return bid;
+
+                    return {
+                        ...bid,
+                        completed_same_service_jobs: matchResult.completed_same_service_jobs,
+                        match_score: matchResult.match_score,
+                        match_score_details: matchResult.match_score_details,
+                        isBestChoice: matchResult.isBestChoice
+                    };
+                })
+                .sort((a, b) => {
+                    if (a.isBestChoice) return -1;
+                    if (b.isBestChoice) return 1;
+                    return Number(b.match_score || 0) - Number(a.match_score || 0);
+                });
+        }
 
         if (requestingUser?.role === 'HANDYMAN') {
             // Active bid count so handyman knows competition level

@@ -4,6 +4,7 @@ import { handleGetAvailableJobs } from '../controllers/HandymanJob.controller.js
 import { handleGetJobDetails, handleGetServices } from '../controllers/Job.controller.js';
 import { handleGetProvinces, handleGetWards } from '../controllers/Location.controller.js';
 import { handleSubmitBid, handleUpdateBid, handleWithdrawBid, handleAcceptBid, handleGetMyBids } from '../controllers/Bid.controller.js';
+import { handleGetPublicHandymanProfile, handleCompareBids } from '../controllers/CustomerHandymanSelection.controller.js';
 import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
 import { uploadJobImagesMiddleware } from '../../../core/config/cloudinary.config.js';
 
@@ -29,6 +30,8 @@ router.delete('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN'])
 
 // BIDDING — Customer actions
 router.post('/jobs/:id/bids/:bidId/accept', checkUserJWT, checkUserRole(['CUSTOMER']), handleAcceptBid);
+router.get('/jobs/:id/handymen/:handymanId/public-profile', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetPublicHandymanProfile);
+router.post('/bids/compare', checkUserJWT, checkUserRole(['CUSTOMER']), handleCompareBids);
 
 // COMMON JOB — must come after /jobs/available to avoid param collision
 router.get('/jobs/:id', checkUserJWT, handleGetJobDetails);

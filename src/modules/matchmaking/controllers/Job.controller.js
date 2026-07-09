@@ -24,7 +24,9 @@ const handleGetJobDetails = async (req, res) => {
         const requestingUser = req.user ? { id: req.user.id, role: req.user.role } : null;
         const { current_lat, current_long } = req.query;
         const result = await getJobDetailsByIdService(jobId, requestingUser, { current_lat, current_long });
-        const status = result.EC === 0 ? 200 : (result.EC === 404 ? 404 : 500);
+        const status = result.EC === 0
+            ? 200
+            : ([403, 404].includes(result.EC) ? result.EC : 500);
         return res.status(status).json({
             EM: result.EM,
             EC: result.EC,

@@ -2,7 +2,6 @@ import {
     submitBidService,
     updateBidService,
     withdrawBidService,
-    acceptBidService,
     getMyBidsService
 } from '../services/Bid.service.js';
 
@@ -24,7 +23,9 @@ const handleUpdateBid = async (req, res) => {
         const handymanId = req.user.id;
         const { id: jobId, bidId } = req.params;
         const result = await updateBidService(handymanId, jobId, bidId, req.body);
-        const status = result.EC === 0 ? 200 : (result.EC === 404 ? 404 : 400);
+        const status = result.EC === 0
+            ? 200
+            : ([404, 409].includes(result.EC) ? result.EC : 400);
         return res.status(status).json(result);
     } catch (error) {
         console.log(">>> Error in handleUpdateBid: ", error);
@@ -37,23 +38,12 @@ const handleWithdrawBid = async (req, res) => {
         const handymanId = req.user.id;
         const { id: jobId, bidId } = req.params;
         const result = await withdrawBidService(handymanId, jobId, bidId);
-        const status = result.EC === 0 ? 200 : (result.EC === 404 ? 404 : 400);
+        const status = result.EC === 0
+            ? 200
+            : ([404, 409].includes(result.EC) ? result.EC : 400);
         return res.status(status).json(result);
     } catch (error) {
         console.log(">>> Error in handleWithdrawBid: ", error);
-        return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
-    }
-};
-
-const handleAcceptBid = async (req, res) => {
-    try {
-        const customerId = req.user.id;
-        const { id: jobId, bidId } = req.params;
-        const result = await acceptBidService(customerId, jobId, bidId);
-        const status = result.EC === 0 ? 200 : (result.EC === 404 ? 404 : (result.EC === 403 ? 403 : 400));
-        return res.status(status).json(result);
-    } catch (error) {
-        console.log(">>> Error in handleAcceptBid: ", error);
         return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
     }
 };
@@ -69,4 +59,4 @@ const handleGetMyBids = async (req, res) => {
     }
 };
 
-export { handleSubmitBid, handleUpdateBid, handleWithdrawBid, handleAcceptBid, handleGetMyBids };
+export { handleSubmitBid, handleUpdateBid, handleWithdrawBid, handleGetMyBids };

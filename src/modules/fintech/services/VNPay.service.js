@@ -1,12 +1,15 @@
 import Wallet from '../models/Wallet.model.js';
 import Transaction from '../models/Transaction.model.js';
-import db from '../../../core/database/connection.js';
 import moment from 'moment';
 import crypto from 'crypto';
 import qs from 'qs';
 import { sortObject } from '../../../core/utils/vnpay.util.js';
 import User from '../../identity/models/User.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
+import {
+    processFailedGatewayPayment,
+    processSuccessfulGatewayPayment
+} from './PaymentSettlement.service.js';
 
 const createVNPayTopUpLinkService = async (userId, amount, ipAddr, targetWallet = 'MAIN') => {
     try {
@@ -121,73 +124,62 @@ const createVNPayTopUpLinkService = async (userId, amount, ipAddr, targetWallet 
 };
 
 const handleVNPayIPNService = async (vnpayParams) => {
-    const trans = await db.transaction();
     try {
-        let secureHash = vnpayParams['vnp_SecureHash'];
-        delete vnpayParams['vnp_SecureHash'];
-        delete vnpayParams['vnp_SecureHashType'];
-        vnpayParams = sortObject(vnpayParams);
+        const normalizedParams = { ...vnpayParams };
+        const secureHash = normalizedParams['vnp_SecureHash'];
+        delete normalizedParams['vnp_SecureHash'];
+        delete normalizedParams['vnp_SecureHashType'];
+        const sortedParams = sortObject(normalizedParams);
 
         let secretKey = process.env.VNP_HASH_SECRET;
-        let signData = qs.stringify(vnpayParams, { encode: false });
+        let signData = qs.stringify(sortedParams, { encode: false });
         let hmac = crypto.createHmac("sha512", secretKey);
         let signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");
 
         if (secureHash === signed) {
-            let orderCode = vnpayParams['vnp_TxnRef'];
-            let rspCode = vnpayParams['vnp_ResponseCode'];
-            let vnpAmount = vnpayParams['vnp_Amount'] / 100;
+            const orderCode = sortedParams['vnp_TxnRef'];
+            const rspCode = sortedParams['vnp_ResponseCode'];
+            const transactionStatus = sortedParams['vnp_TransactionStatus'];
+            const vnpAmount = sortedParams['vnp_Amount'] / 100;
 
-            const pendingTransaction = await Transaction.findOne({
-                where: { payment_gateway_code: String(orderCode) },
-                transaction: trans
-            });
-
-            if (!pendingTransaction) {
-                await trans.rollback();
-                return { RspCode: '01', Message: 'Order not found' };
-            }
-            if (Number(pendingTransaction.amount) !== Number(vnpAmount)) {
-                await trans.rollback();
-                return { RspCode: '04', Message: 'Invalid amount' };
-            }
-            if (pendingTransaction.status !== 'PENDING') {
-                await trans.rollback();
-                return { RspCode: '02', Message: 'Order already confirmed' };
-            }
-
-            if (rspCode === "00") {
-                const wallet = await Wallet.findOne({
-                    where: { id: pendingTransaction.to_wallet_id },
-                    transaction: trans
+            if (rspCode === "00" && (!transactionStatus || transactionStatus === "00")) {
+                const result = await processSuccessfulGatewayPayment({
+                    paymentMethod: 'VNPAY',
+                    gatewayCode: orderCode,
+                    paidAmount: vnpAmount
                 });
 
-                if (wallet) {
-                    const newBalance = parseFloat(wallet.balance) + parseFloat(pendingTransaction.amount);
-                    await wallet.update({ balance: newBalance }, { transaction: trans });
-                    await pendingTransaction.update({ status: 'SUCCESS' }, { transaction: trans });
-
-                    if (pendingTransaction.transaction_type === 'BONDING_DEPOSIT') {
-                        await HandymanProfile.update(
-                            { security_bond_status: 'PAID', handyman_level: 'C3' },
-                            { where: { user_id: wallet.user_id }, transaction: trans }
-                        );
-                    }
-                    console.log(`>>> VNPay IPN Success: Wallet ${wallet.id} topped up ${pendingTransaction.amount}`);
+                if (result.EC === 0 && result.DT?.already_processed) {
+                    return { RspCode: '02', Message: 'Order already confirmed' };
                 }
-            } else {
-                await pendingTransaction.update({ status: 'FAILED' }, { transaction: trans });
-                console.log(`>>> VNPay IPN Failed: Transaction ${orderCode} failed with code ${rspCode}`);
+                if (result.EC === 404) {
+                    return { RspCode: '01', Message: 'Order not found' };
+                }
+                if (result.EC === 400) {
+                    return { RspCode: '04', Message: 'Invalid amount' };
+                }
+                if (result.EC !== 0) {
+                    return { RspCode: '99', Message: result.EM };
+                }
+
+                return { RspCode: '00', Message: 'Confirm Success' };
             }
 
-            await trans.commit();
+            const failedResult = await processFailedGatewayPayment({
+                paymentMethod: 'VNPAY',
+                gatewayCode: orderCode
+            });
+            if (failedResult.EC === 404) {
+                return { RspCode: '01', Message: 'Order not found' };
+            }
+            if (failedResult.EC !== 0) {
+                return { RspCode: '99', Message: failedResult.EM };
+            }
             return { RspCode: '00', Message: 'Confirm Success' };
         } else {
-            await trans.rollback();
             return { RspCode: '97', Message: 'Invalid Checksum' };
         }
     } catch (error) {
-        await trans.rollback();
         console.log("Error in handleVNPayIPNService: ", error);
         return { RspCode: '99', Message: 'Unknown error' };
     }

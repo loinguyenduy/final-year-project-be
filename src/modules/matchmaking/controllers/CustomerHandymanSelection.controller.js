@@ -2,10 +2,16 @@ import {
     getPublicHandymanProfileService,
     compareBidsService
 } from '../services/CustomerHandymanSelection.service.js';
+import {
+    cancelDepositPaymentService,
+    createDepositPaymentService,
+    getDepositPaymentStatusService,
+    getDepositSummaryService
+} from '../../fintech/services/DepositPayment.service.js';
 
 const getHttpStatus = (errorCode) => {
     if (errorCode === 0) return 200;
-    if ([400, 403, 404].includes(errorCode)) return errorCode;
+    if ([400, 403, 404, 409, 502].includes(errorCode)) return errorCode;
     return 500;
 };
 
@@ -32,7 +38,78 @@ const handleCompareBids = async (req, res) => {
     }
 };
 
+const handleGetDepositSummary = async (req, res) => {
+    try {
+        const customerId = req.user.id;
+        const { id: jobId, bidId } = req.params;
+        const result = await getDepositSummaryService(customerId, jobId, bidId);
+        return res.status(getHttpStatus(result.EC)).json(result);
+    } catch (error) {
+        console.log(">>> Error in handleGetDepositSummary: ", error);
+        return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
+    }
+};
+
+const handleCreateDepositPayment = async (req, res) => {
+    try {
+        const customerId = req.user.id;
+        const { id: jobId, bidId } = req.params;
+        const forwardedIp = req.headers["x-forwarded-for"];
+        const ipAddr = Array.isArray(forwardedIp)
+            ? forwardedIp[0]
+            : String(forwardedIp || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
+        const result = await createDepositPaymentService(
+            customerId,
+            jobId,
+            bidId,
+            req.body.payment_method,
+            ipAddr
+        );
+        const successStatus = result.EC === 0 ? 201 : getHttpStatus(result.EC);
+        return res.status(successStatus).json(result);
+    } catch (error) {
+        console.log(">>> Error in handleCreateDepositPayment: ", error);
+        return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
+    }
+};
+
+const handleGetDepositPaymentStatus = async (req, res) => {
+    try {
+        const customerId = req.user.id;
+        const { id: jobId, transactionId } = req.params;
+        const result = await getDepositPaymentStatusService(
+            customerId,
+            jobId,
+            transactionId
+        );
+        return res.status(getHttpStatus(result.EC)).json(result);
+    } catch (error) {
+        console.log(">>> Error in handleGetDepositPaymentStatus: ", error);
+        return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
+    }
+};
+
+const handleCancelDepositPayment = async (req, res) => {
+    try {
+        const customerId = req.user.id;
+        const { id: jobId, transactionId } = req.params;
+        const result = await cancelDepositPaymentService(
+            customerId,
+            jobId,
+            transactionId
+        );
+        return res.status(getHttpStatus(result.EC)).json(result);
+    } catch (error) {
+        console.log(">>> Error in handleCancelDepositPayment: ", error);
+        return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
+    }
+};
+
 export {
     handleGetPublicHandymanProfile,
-    handleCompareBids
+    handleCompareBids,
+    handleGetDepositSummary,
+    handleCreateDepositPayment,
+    handleGetDepositPaymentStatus,
+    handleCancelDepositPayment
 };

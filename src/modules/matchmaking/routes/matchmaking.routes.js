@@ -3,8 +3,15 @@ import { handleCreateJob, handleGetCustomerJobs } from '../controllers/CustomerJ
 import { handleGetAvailableJobs } from '../controllers/HandymanJob.controller.js';
 import { handleGetJobDetails, handleGetServices } from '../controllers/Job.controller.js';
 import { handleGetProvinces, handleGetWards } from '../controllers/Location.controller.js';
-import { handleSubmitBid, handleUpdateBid, handleWithdrawBid, handleAcceptBid, handleGetMyBids } from '../controllers/Bid.controller.js';
-import { handleGetPublicHandymanProfile, handleCompareBids } from '../controllers/CustomerHandymanSelection.controller.js';
+import { handleSubmitBid, handleUpdateBid, handleWithdrawBid, handleGetMyBids } from '../controllers/Bid.controller.js';
+import {
+    handleCancelDepositPayment,
+    handleCompareBids,
+    handleCreateDepositPayment,
+    handleGetDepositPaymentStatus,
+    handleGetDepositSummary,
+    handleGetPublicHandymanProfile
+} from '../controllers/CustomerHandymanSelection.controller.js';
 import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
 import { uploadJobImagesMiddleware } from '../../../core/config/cloudinary.config.js';
 
@@ -29,7 +36,10 @@ router.patch('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN']),
 router.delete('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN']), handleWithdrawBid);
 
 // BIDDING — Customer actions
-router.post('/jobs/:id/bids/:bidId/accept', checkUserJWT, checkUserRole(['CUSTOMER']), handleAcceptBid);
+router.get('/jobs/:id/bids/:bidId/deposit-summary', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetDepositSummary);
+router.post('/jobs/:id/bids/:bidId/deposit-payments', checkUserJWT, checkUserRole(['CUSTOMER']), handleCreateDepositPayment);
+router.get('/jobs/:id/deposit-payments/:transactionId/status', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetDepositPaymentStatus);
+router.post('/jobs/:id/deposit-payments/:transactionId/cancel', checkUserJWT, checkUserRole(['CUSTOMER']), handleCancelDepositPayment);
 router.get('/jobs/:id/handymen/:handymanId/public-profile', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetPublicHandymanProfile);
 router.post('/bids/compare', checkUserJWT, checkUserRole(['CUSTOMER']), handleCompareBids);
 

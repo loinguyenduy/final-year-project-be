@@ -3,6 +3,7 @@ import {
   handlePayOSWebhookService,
 } from "../services/PayOS.service.js";
 import { createVNPayTopUpLinkService, handleVNPayIPNService } from "../services/VNPay.service.js";
+import { getSystemWalletsService } from "../services/Wallet.service.js";
 
 const handleTopUpWallet = async (req, res) => {
   try {
@@ -81,4 +82,18 @@ const handleVNPayIPN = async (req, res) => {
   }
 };
 
-export { handleTopUpWallet, handlePayOSWebhook, handleVNPayIPN };
+const handleGetSystemWallets = async (req, res) => {
+  try {
+    const result = await getSystemWalletsService();
+    return res.status(result.EC === 0 ? 200 : 500).json(result);
+  } catch (error) {
+    console.log("Error in handleGetSystemWallets controller: ", error);
+    return res.status(500).json({
+      EM: "Internal server error.",
+      EC: 500,
+      DT: []
+    });
+  }
+};
+
+export { handleTopUpWallet, handlePayOSWebhook, handleVNPayIPN, handleGetSystemWallets };

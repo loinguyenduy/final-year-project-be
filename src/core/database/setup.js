@@ -89,6 +89,9 @@ Job.belongsTo(User, { as: 'SelectedHandyman', foreignKey: 'selected_handyman_id'
 Job.hasMany(Bid, { foreignKey: 'job_id' });
 Bid.belongsTo(Job, { foreignKey: 'job_id' });
 
+Bid.hasOne(Job, { as: 'SelectedForJob', foreignKey: 'selected_bid_id' });
+Job.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
+
 User.hasMany(Bid, { foreignKey: 'handyman_id' });
 Bid.belongsTo(User, { foreignKey: 'handyman_id' });
 
@@ -110,6 +113,9 @@ Transaction.belongsTo(Wallet, { as: 'ToWallet', foreignKey: 'to_wallet_id' });
 
 Job.hasMany(Transaction, { foreignKey: 'job_id' });
 Transaction.belongsTo(Job, { foreignKey: 'job_id' });
+
+Transaction.hasOne(Job, { as: 'DepositForJob', foreignKey: 'deposit_transaction_id' });
+Job.belongsTo(Transaction, { as: 'DepositTransaction', foreignKey: 'deposit_transaction_id' });
 
 Job.hasMany(EvidenceVault, { foreignKey: 'job_id' });
 EvidenceVault.belongsTo(Job, { foreignKey: 'job_id' });

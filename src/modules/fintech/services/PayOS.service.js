@@ -1,9 +1,12 @@
 import Transaction from "../models/Transaction.model.js";
 import payOSInstance from "../../../core/config/payos.config.js";
-import db from "../../../core/database/connection.js";
 import Wallet from "../models/Wallet.model.js";
 import User from '../../identity/models/User.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
+import {
+  processFailedGatewayPayment,
+  processSuccessfulGatewayPayment
+} from "./PaymentSettlement.service.js";
 
 const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => {
   try {
@@ -124,55 +127,23 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
 };
 
 const handlePayOSWebhookService = async (webhookData) => {
-  const trans = await db.transaction();
   try {
-    // Verify the webhook signature and extract the data
     const verifiedData = await payOSInstance.webhooks.verify(webhookData);
     const { orderCode, amount, code } = verifiedData;
 
-    const pendingTransaction = await Transaction.findOne({
-        where: { payment_gateway_code: String(orderCode) },
-        transaction: trans,
-    });
-
     if (code === "00") {
-      if (pendingTransaction && pendingTransaction.status === "PENDING") {
-          const wallet = await Wallet.findOne({
-            where: { id: pendingTransaction.to_wallet_id },
-            transaction: trans,
-          });
-
-          if (wallet) {
-            const newBalance = parseFloat(wallet.balance) + parseFloat(pendingTransaction.amount);
-            await wallet.update({ balance: newBalance }, { transaction: trans });
-            await pendingTransaction.update({ status: "SUCCESS" }, { transaction: trans });
-            
-            if (pendingTransaction.transaction_type === 'BONDING_DEPOSIT') {
-                await HandymanProfile.update(
-                    { security_bond_status: 'PAID', handyman_level: 'C3' },
-                    { where: { user_id: wallet.user_id }, transaction: trans }
-                );
-                console.log(`>>> Handyman ${wallet.user_id} bonded successfully. Upgraded to C3.`);
-            }
-
-            console.log(">>> PayOS Webhook: Wallet and Transaction updated successfully!");
-          }
-      }
-    } else {
-        if (pendingTransaction && pendingTransaction.status === "PENDING") {
-            await pendingTransaction.update({ status: "FAILED" }, { transaction: trans });
-            console.log(`>>> PayOS Webhook: Transaction ${orderCode} marked as FAILED due to code ${code}.`);
-        }
+      return await processSuccessfulGatewayPayment({
+        paymentMethod: 'PAYOS',
+        gatewayCode: orderCode,
+        paidAmount: amount
+      });
     }
 
-    await trans.commit();
-    return {
-      EM: "Webhook processed.",
-      EC: 0,
-      DT: "",
-    };
+    return await processFailedGatewayPayment({
+      paymentMethod: 'PAYOS',
+      gatewayCode: orderCode
+    });
   } catch (error) {
-    await trans.rollback();
     console.error(">>> Webhook processing failed:", error);
     return {
       EM: "Invalid webhook data.",

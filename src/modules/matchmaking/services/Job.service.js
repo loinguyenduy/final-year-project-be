@@ -2,9 +2,12 @@ import { Op } from 'sequelize';
 import Job from '../models/Job.model.js';
 import Service from '../models/Service.model.js';
 import User from '../../identity/models/User.model.js';
+import UserAddress from '../../identity/models/UserAddress.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import Bid from '../models/Bid.model.js';
+import Province from '../models/Province.model.js';
+import Ward from '../models/Ward.model.js';
 import db from '../../../core/database/connection.js';
 import { buildMatchResultsForBids } from './CustomerHandymanSelection.service.js';
 
@@ -107,7 +110,27 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                 {
                     model: User,
                     as: 'SelectedHandyman',
-                    attributes: ['id', 'full_name', 'avatar_url', 'phone_number']
+                    attributes: ['id', 'full_name', 'avatar_url', 'phone_number'],
+                    include: [
+                        {
+                            model: UserAddress,
+                            attributes: [
+                                'id', 'province_code', 'ward_code',
+                                'detail_address', 'full_address', 'is_default'
+                            ],
+                            required: false
+                        }
+                    ]
+                },
+                {
+                    model: Province,
+                    attributes: ['province_code', 'name', 'short_name'],
+                    required: false
+                },
+                {
+                    model: Ward,
+                    attributes: ['ward_code', 'name'],
+                    required: false
                 },
                 {
                     model: JobStatusHistory,
@@ -129,8 +152,26 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
             return { EM: "Job not found.", EC: 404, DT: "" };
         }
 
-        // Count total active bids for handyman context (without exposing details)
         let responseData = job.toJSON();
+        const isAdmin = requestingUser?.role === 'ADMIN';
+        const isOwnerCustomer = requestingUser?.role === 'CUSTOMER'
+            && responseData.customer_id === requestingUser.id;
+        const ownBid = requestingUser?.role === 'HANDYMAN'
+            ? responseData.Bids?.[0]
+            : null;
+        const isOpenForBidding = ['POSTED', 'BIDDING'].includes(responseData.current_status);
+
+        if (requestingUser?.role === 'CUSTOMER' && !isOwnerCustomer) {
+            return { EM: "You do not have permission to view this job.", EC: 403, DT: "" };
+        }
+
+        if (
+            requestingUser?.role === 'HANDYMAN'
+            && !isOpenForBidding
+            && !ownBid
+        ) {
+            return { EM: "You do not have permission to view this job.", EC: 403, DT: "" };
+        }
 
         if (requestingUser?.role === 'CUSTOMER' && responseData.Bids?.length > 0) {
             const pendingBids = job.Bids.filter((bid) => bid.status === 'PENDING');
@@ -176,6 +217,43 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                 responseData.distance_km = null;
             }
         }
+
+        const contactUnlockedStatuses = [
+            'ACCEPTED', 'EN_ROUTE', 'ARRIVED',
+            'IN_PROGRESS', 'WARRANTY', 'CLOSED'
+        ];
+        const contactIsUnlocked = Boolean(responseData.contact_unlocked_at)
+            && contactUnlockedStatuses.includes(responseData.current_status);
+        const isSelectedHandyman = requestingUser?.role === 'HANDYMAN'
+            && responseData.selected_handyman_id === requestingUser.id;
+        const canSeeJobLocation = isAdmin || isOwnerCustomer
+            || (isSelectedHandyman && contactIsUnlocked);
+        const canSeeCustomerContact = isAdmin || isOwnerCustomer
+            || (isSelectedHandyman && contactIsUnlocked);
+        const canSeeHandymanContact = isAdmin || isSelectedHandyman
+            || (isOwnerCustomer && contactIsUnlocked);
+
+        if (!canSeeJobLocation) {
+            responseData.detail_address = null;
+            responseData.gps_lat = null;
+            responseData.gps_long = null;
+            responseData.service_address = [
+                responseData.Ward?.name,
+                responseData.Province?.name
+            ].filter(Boolean).join(', ');
+        }
+
+        if (responseData.Customer && !canSeeCustomerContact) {
+            responseData.Customer.phone_number = null;
+        }
+
+        if (responseData.SelectedHandyman && !canSeeHandymanContact) {
+            responseData.SelectedHandyman.phone_number = null;
+            responseData.SelectedHandyman.User_Addresses = [];
+        }
+
+        responseData.contact_is_unlocked_for_requester = contactIsUnlocked
+            && (isAdmin || isOwnerCustomer || isSelectedHandyman);
 
         return {
             EM: "Job details retrieved successfully.",

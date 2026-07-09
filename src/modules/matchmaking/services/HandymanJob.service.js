@@ -145,6 +145,8 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                 // Mask precise location for POSTED/BIDDING to prevent off-platform contact
                 if (['POSTED', 'BIDDING'].includes(data.current_status)) {
                     data.detail_address = null;
+                    data.gps_lat = null;
+                    data.gps_long = null;
                     const wardName = data.Ward?.name ?? '';
                     const provinceName = data.Province?.name ?? '';
                     data.service_address = [wardName, provinceName].filter(Boolean).join(', ');

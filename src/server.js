@@ -6,6 +6,7 @@ import { initDatabase } from "./core/database/setup.js";
 import { initCronJobs } from "./core/cron/index.js";
 import v1Routes from "./core/routes/v1.routes.js";
 import passport from "./core/middlewares/passport.middleware.js";
+import { initializeSystemWallets } from "./modules/fintech/services/Wallet.service.js";
 // import seedAdmin from "./core/database/seedAdmin.js";
 // import seedServices from "./core/database/seedServices.js";
 
@@ -36,6 +37,8 @@ app.get("/", (req, res) => {
 });
 
 initDatabase().then(() => {
+  return initializeSystemWallets();
+}).then(() => {
   initCronJobs();
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

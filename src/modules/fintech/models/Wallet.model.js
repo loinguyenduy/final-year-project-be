@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 
 const Wallet = db.define('Wallet', {
@@ -23,6 +23,25 @@ const Wallet = db.define('Wallet', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        {
+            name: 'wallets_user_type_unique',
+            unique: true,
+            fields: ['user_id', 'wallet_type']
+        },
+        {
+            name: 'wallets_global_system_type_unique',
+            unique: true,
+            fields: ['wallet_type'],
+            where: {
+                wallet_type: {
+                    [Op.in]: ['SYSTEM_PROFIT', 'SYSTEM_ESCROW']
+                }
+            }
+        }
+    ]
+});
 
 export default Wallet;

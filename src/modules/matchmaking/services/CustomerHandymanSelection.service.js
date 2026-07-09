@@ -9,24 +9,95 @@ import Review from '../../dispute/models/Review.model.js';
 
 const MAX_COMPARE_BIDS = 3;
 const MAX_CATEGORY_JOBS_FOR_FULL_SCORE = 20;
+const MAX_TOTAL_JOBS_FOR_FULL_SCORE = 50;
+const MATCH_SCORE_WEIGHTS = {
+    price: 30,
+    reputation: 25,
+    categoryExperience: 20,
+    totalExperience: 10,
+    kyc: 5,
+    eta: 5,
+    completionTime: 5
+};
 
 const roundToTwoDecimals = (value) => Number(Number(value || 0).toFixed(2));
 
-const calculateMatchScore = ({ proposedPrice, lowestPrice, bayesianScore, completedSameServiceJobs }) => {
+const getMinutesUntilEta = (eta, now = new Date()) => {
+    if (!eta) return null;
+    const etaDate = new Date(eta);
+    if (Number.isNaN(etaDate.getTime())) return null;
+
+    const minutes = Math.ceil((etaDate.getTime() - now.getTime()) / 60000);
+    return Math.max(minutes, 1);
+};
+
+const getKycScore = ({ kycStatus, handymanLevel }) => {
+    const verifiedScore = kycStatus === 'VERIFIED' ? 3 : 0;
+    const levelScoreMap = {
+        C0: 0,
+        C1: 0.75,
+        C2: 1.5,
+        C3: 2
+    };
+    return verifiedScore + (levelScoreMap[handymanLevel] || 0);
+};
+
+const calculateMatchScore = ({
+    proposedPrice,
+    lowestPrice,
+    bayesianScore,
+    completedSameServiceJobs,
+    totalJobsCompleted,
+    kycStatus,
+    handymanLevel,
+    eta,
+    shortestEtaMinutes,
+    estimatedDurationHours,
+    shortestDurationHours,
+    now
+}) => {
     const price = Number(proposedPrice);
     const minPrice = Number(lowestPrice);
     const score = Number(bayesianScore || 0);
     const sameServiceJobs = Number(completedSameServiceJobs || 0);
+    const totalJobs = Number(totalJobsCompleted || 0);
+    const duration = Number(estimatedDurationHours);
+    const minDuration = Number(shortestDurationHours);
+    const etaMinutes = getMinutesUntilEta(eta, now);
 
-    const priceScore = price > 0 && minPrice > 0 ? 40 * (minPrice / price) : 0;
-    const reputationScore = 30 * (Math.min(score, 5) / 5);
-    const expertiseScore = 30 * (Math.min(sameServiceJobs, MAX_CATEGORY_JOBS_FOR_FULL_SCORE) / MAX_CATEGORY_JOBS_FOR_FULL_SCORE);
+    const priceScore = price > 0 && minPrice > 0 ? MATCH_SCORE_WEIGHTS.price * (minPrice / price) : 0;
+    const reputationScore = MATCH_SCORE_WEIGHTS.reputation * (Math.min(score, 5) / 5);
+    const categoryExperienceScore = MATCH_SCORE_WEIGHTS.categoryExperience
+        * (Math.min(sameServiceJobs, MAX_CATEGORY_JOBS_FOR_FULL_SCORE) / MAX_CATEGORY_JOBS_FOR_FULL_SCORE);
+    const totalExperienceScore = MATCH_SCORE_WEIGHTS.totalExperience
+        * (Math.min(totalJobs, MAX_TOTAL_JOBS_FOR_FULL_SCORE) / MAX_TOTAL_JOBS_FOR_FULL_SCORE);
+    const kycScore = getKycScore({ kycStatus, handymanLevel });
+    const etaScore = etaMinutes && shortestEtaMinutes
+        ? MATCH_SCORE_WEIGHTS.eta * (shortestEtaMinutes / etaMinutes)
+        : 0;
+    const completionTimeScore = duration > 0 && minDuration > 0
+        ? MATCH_SCORE_WEIGHTS.completionTime * (minDuration / duration)
+        : 0;
 
     return {
         price_score: roundToTwoDecimals(priceScore),
         reputation_score: roundToTwoDecimals(reputationScore),
-        expertise_score: roundToTwoDecimals(expertiseScore),
-        total_match_score: roundToTwoDecimals(priceScore + reputationScore + expertiseScore)
+        category_experience_score: roundToTwoDecimals(categoryExperienceScore),
+        expertise_score: roundToTwoDecimals(categoryExperienceScore),
+        total_experience_score: roundToTwoDecimals(totalExperienceScore),
+        kyc_score: roundToTwoDecimals(kycScore),
+        eta_score: roundToTwoDecimals(etaScore),
+        completion_time_score: roundToTwoDecimals(completionTimeScore),
+        total_match_score: roundToTwoDecimals(
+            priceScore
+            + reputationScore
+            + categoryExperienceScore
+            + totalExperienceScore
+            + kycScore
+            + etaScore
+            + completionTimeScore
+        ),
+        weights: MATCH_SCORE_WEIGHTS
     };
 };
 
@@ -40,16 +111,24 @@ const countCompletedSameServiceJobs = async (handymanId, serviceId) => {
     });
 };
 
-const mapBidForMatchResponse = async (bid, lowestPrice, serviceId) => {
+const mapBidForMatchResponse = async (bid, benchmarks, serviceId) => {
     const plainBid = bid.toJSON ? bid.toJSON() : bid;
     const handyman = plainBid.User || {};
     const profile = handyman.Handyman_Profile || {};
     const completedSameServiceJobs = await countCompletedSameServiceJobs(plainBid.handyman_id, serviceId);
     const score = calculateMatchScore({
         proposedPrice: plainBid.proposed_price,
-        lowestPrice,
+        lowestPrice: benchmarks.lowestPrice,
         bayesianScore: profile.bayesian_score,
-        completedSameServiceJobs
+        completedSameServiceJobs,
+        totalJobsCompleted: profile.total_jobs_completed,
+        kycStatus: handyman.kyc_status,
+        handymanLevel: profile.handyman_level,
+        eta: plainBid.eta,
+        shortestEtaMinutes: benchmarks.shortestEtaMinutes,
+        estimatedDurationHours: plainBid.estimated_duration_hours,
+        shortestDurationHours: benchmarks.shortestDurationHours,
+        now: benchmarks.now
     });
 
     return {
@@ -82,9 +161,22 @@ const buildMatchResultsForBids = async (bids, serviceId) => {
         return [];
     }
 
-    const lowestPrice = Math.min(...bids.map((bid) => Number(bid.proposed_price)));
+    const now = new Date();
+    const etaMinutesList = bids
+        .map((bid) => getMinutesUntilEta(bid.eta, now))
+        .filter((minutes) => minutes !== null);
+    const durationList = bids
+        .map((bid) => Number(bid.estimated_duration_hours))
+        .filter((duration) => duration > 0);
+    const benchmarks = {
+        now,
+        lowestPrice: Math.min(...bids.map((bid) => Number(bid.proposed_price))),
+        shortestEtaMinutes: etaMinutesList.length > 0 ? Math.min(...etaMinutesList) : null,
+        shortestDurationHours: durationList.length > 0 ? Math.min(...durationList) : null
+    };
+
     const results = await Promise.all(
-        bids.map((bid) => mapBidForMatchResponse(bid, lowestPrice, serviceId))
+        bids.map((bid) => mapBidForMatchResponse(bid, benchmarks, serviceId))
     );
 
     results.sort((a, b) => b.match_score - a.match_score);

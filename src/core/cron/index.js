@@ -11,7 +11,7 @@ const initCronJobs = () => {
   });
 
   // Dọn dẹp giao dịch treo mỗi 15 phút một lần
-  cron.schedule("*/15 * * * *", async () => {
+  cron.schedule("* * * * *", async () => {
     await cleanupExpiredTransactions();
   });
 };

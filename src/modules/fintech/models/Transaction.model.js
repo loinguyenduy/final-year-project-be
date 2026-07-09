@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 
 const Transaction = db.define('Transaction', {
@@ -31,7 +31,32 @@ const Transaction = db.define('Transaction', {
     description: {
         type: DataTypes.STRING(255),
         allowNull: true
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        {
+            name: 'transactions_gateway_code_unique',
+            unique: true,
+            fields: ['payment_method', 'payment_gateway_code'],
+            where: {
+                payment_gateway_code: { [Op.ne]: null }
+            }
+        },
+        {
+            name: 'transactions_one_pending_deposit_per_job',
+            unique: true,
+            fields: ['job_id'],
+            where: {
+                transaction_type: 'DEPOSIT_10',
+                status: 'PENDING'
+            }
+        }
+    ]
+});
 
 export default Transaction;

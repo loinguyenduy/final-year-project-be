@@ -219,7 +219,17 @@ const getCustomerJobsService = async (userId) => {
                 {
                     model: User,
                     as: 'SelectedHandyman',
-                    attributes: ['id', 'full_name', 'avatar_url', 'phone_number']
+                    attributes: ['id', 'full_name', 'avatar_url', 'phone_number'],
+                    include: [
+                        {
+                            model: UserAddress,
+                            attributes: [
+                                'id', 'province_code', 'ward_code',
+                                'detail_address', 'full_address', 'is_default'
+                            ],
+                            required: false
+                        }
+                    ]
                 }
             ],
             order: [['createdAt', 'DESC']]

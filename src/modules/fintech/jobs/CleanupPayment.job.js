@@ -38,9 +38,21 @@ const cleanupExpiredTransactions = async () => {
 
     let expiredDepositCount = 0;
     for (const deposit of expiredDeposits) {
-      const result = await expireTransactionByIdService(deposit.id);
-      if (result.EC === 0 && !result.DT?.already_processed) {
-        expiredDepositCount += 1;
+      try {
+        const result = await expireTransactionByIdService(deposit.id);
+        if (result.EC === 0 && !result.DT?.already_processed) {
+          expiredDepositCount += 1;
+        }
+        if (result.EC !== 0) {
+          console.error(
+            `[CronJob] Failed to expire deposit ${deposit.id}: ${result.EM}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[CronJob] Unexpected error while expiring deposit ${deposit.id}:`,
+          error
+        );
       }
     }
 

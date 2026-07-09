@@ -8,6 +8,14 @@ import {
   processSuccessfulGatewayPayment
 } from "./PaymentSettlement.service.js";
 
+const getPublicBackendUrl = () => {
+  const url = process.env.BACKEND_PUBLIC_URL
+    || process.env.PUBLIC_BACKEND_URL
+    || process.env.API_PUBLIC_URL;
+
+  return url ? String(url).replace(/\/$/, '') : null;
+};
+
 const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => {
   try {
     if (!amount || amount <= 0) {
@@ -99,12 +107,20 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
       to_wallet_id: wallet.id,
     });
 
+    const publicBackendUrl = getPublicBackendUrl();
+    const returnUrl = process.env.PAYOS_TOPUP_RETURN_URL
+      || (publicBackendUrl ? `${publicBackendUrl}/api/v1/fintech/payos-return` : null)
+      || process.env.PAYOS_RETURN_URL;
+    const cancelUrl = process.env.PAYOS_TOPUP_CANCEL_URL
+      || (publicBackendUrl ? `${publicBackendUrl}/api/v1/fintech/payos-cancel` : null)
+      || process.env.PAYOS_CANCEL_URL;
+
     const bodyPayOS = {
       orderCode: orderCode,
       amount: Number(amount),
       description: `Topup ${String(orderCode)}`,
-      returnUrl: process.env.PAYOS_RETURN_URL,
-      cancelUrl: process.env.PAYOS_CANCEL_URL,
+      returnUrl,
+      cancelUrl,
     };
 
     // Create payment link using PayOS SDK
@@ -153,4 +169,117 @@ const handlePayOSWebhookService = async (webhookData) => {
   }
 };
 
-export { createTopUpLinkService, handlePayOSWebhookService };
+const getPayOSOrderCode = (queryParams) => {
+  const orderCode = queryParams?.orderCode || queryParams?.order_code;
+  if (!orderCode || Number.isNaN(Number(orderCode))) {
+    return null;
+  }
+  return Number(orderCode);
+};
+
+const handlePayOSReturnService = async (queryParams) => {
+  try {
+    const orderCode = getPayOSOrderCode(queryParams);
+    if (!orderCode) {
+      return { EM: "Missing or invalid PayOS orderCode.", EC: 400, DT: "" };
+    }
+
+    const paymentLink = await payOSInstance.paymentRequests.get(orderCode);
+    const gatewayStatus = paymentLink.status;
+
+    if (gatewayStatus === 'PAID') {
+      const result = await processSuccessfulGatewayPayment({
+        paymentMethod: 'PAYOS',
+        gatewayCode: orderCode,
+        paidAmount: Number(paymentLink.amountPaid || paymentLink.amount)
+      });
+
+      return {
+        EM: result.EM,
+        EC: result.EC,
+        DT: {
+          order_code: orderCode,
+          gateway_status: gatewayStatus,
+          settlement: result.DT
+        }
+      };
+    }
+
+    if (['CANCELLED', 'FAILED', 'EXPIRED'].includes(gatewayStatus)) {
+      const result = await processFailedGatewayPayment({
+        paymentMethod: 'PAYOS',
+        gatewayCode: orderCode
+      });
+
+      return {
+        EM: result.EM,
+        EC: result.EC,
+        DT: {
+          order_code: orderCode,
+          gateway_status: gatewayStatus,
+          settlement: result.DT
+        }
+      };
+    }
+
+    return {
+      EM: "PayOS payment is not completed yet.",
+      EC: 0,
+      DT: {
+        order_code: orderCode,
+        gateway_status: gatewayStatus
+      }
+    };
+  } catch (error) {
+    console.error(">>> Error in handlePayOSReturnService:", error);
+    return { EM: "Unable to process PayOS return.", EC: 500, DT: "" };
+  }
+};
+
+const handlePayOSCancelService = async (queryParams) => {
+  try {
+    const orderCode = getPayOSOrderCode(queryParams);
+    if (!orderCode) {
+      return { EM: "Missing or invalid PayOS orderCode.", EC: 400, DT: "" };
+    }
+
+    const paymentLink = await payOSInstance.paymentRequests.get(orderCode);
+    const gatewayStatus = paymentLink.status;
+
+    if (['PAID', 'PROCESSING'].includes(gatewayStatus)) {
+      return {
+        EM: "PayOS payment is already paid or processing and cannot be marked as failed.",
+        EC: 409,
+        DT: {
+          order_code: orderCode,
+          gateway_status: gatewayStatus
+        }
+      };
+    }
+
+    const result = await processFailedGatewayPayment({
+      paymentMethod: 'PAYOS',
+      gatewayCode: orderCode
+    });
+
+    return {
+      EM: "PayOS payment was cancelled by user.",
+      EC: result.EC,
+      DT: {
+        order_code: orderCode,
+        gateway_status: gatewayStatus,
+        settlement: result.DT
+      }
+    };
+  } catch (error) {
+    console.error(">>> Error in handlePayOSCancelService:", error);
+    return { EM: "Unable to process PayOS cancellation.", EC: 500, DT: "" };
+  }
+};
+
+export {
+  createTopUpLinkService,
+  handlePayOSWebhookService,
+  handlePayOSReturnService,
+  handlePayOSCancelService
+};

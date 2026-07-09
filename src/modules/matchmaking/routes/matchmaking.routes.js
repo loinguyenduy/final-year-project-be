@@ -5,10 +5,8 @@ import { handleGetJobDetails, handleGetServices } from '../controllers/Job.contr
 import { handleGetProvinces, handleGetWards } from '../controllers/Location.controller.js';
 import { handleSubmitBid, handleUpdateBid, handleWithdrawBid, handleGetMyBids } from '../controllers/Bid.controller.js';
 import {
-    handleCancelDepositPayment,
+    handleAcceptWithWalletDeposit,
     handleCompareBids,
-    handleCreateDepositPayment,
-    handleGetDepositPaymentStatus,
     handleGetDepositSummary,
     handleGetPublicHandymanProfile
 } from '../controllers/CustomerHandymanSelection.controller.js';
@@ -37,9 +35,7 @@ router.delete('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN'])
 
 // BIDDING — Customer actions
 router.get('/jobs/:id/bids/:bidId/deposit-summary', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetDepositSummary);
-router.post('/jobs/:id/bids/:bidId/deposit-payments', checkUserJWT, checkUserRole(['CUSTOMER']), handleCreateDepositPayment);
-router.get('/jobs/:id/deposit-payments/:transactionId/status', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetDepositPaymentStatus);
-router.post('/jobs/:id/deposit-payments/:transactionId/cancel', checkUserJWT, checkUserRole(['CUSTOMER']), handleCancelDepositPayment);
+router.post('/jobs/:id/bids/:bidId/accept-with-wallet-deposit', checkUserJWT, checkUserRole(['CUSTOMER']), handleAcceptWithWalletDeposit);
 router.get('/jobs/:id/handymen/:handymanId/public-profile', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetPublicHandymanProfile);
 router.post('/bids/compare', checkUserJWT, checkUserRole(['CUSTOMER']), handleCompareBids);
 

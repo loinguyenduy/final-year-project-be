@@ -20,26 +20,44 @@ const restoreJobToBidding = async (paymentTransaction, {
     lock: transaction.LOCK.UPDATE
   });
 
-  if (
-    !job
-    || job.current_status !== 'PENDING_DEPOSIT'
-    || job.deposit_transaction_id !== paymentTransaction.id
-  ) {
+  if (!job) {
     return;
   }
 
+  const isThisDepositLockedOnJob = job.deposit_transaction_id === paymentTransaction.id;
+  if (!isThisDepositLockedOnJob) {
+    return;
+  }
+
+  if (job.current_status === 'PENDING_DEPOSIT') {
+    await job.update({
+      current_status: 'BIDDING',
+      selected_bid_id: null,
+      deposit_transaction_id: null,
+      deposit_amount: null
+    }, { transaction });
+
+    await JobStatusHistory.create({
+      job_id: job.id,
+      changed_by_user_id: changedByUserId,
+      old_status: 'PENDING_DEPOSIT',
+      new_status: 'BIDDING'
+    }, { transaction });
+
+    return;
+  }
+
+  if (job.current_status !== 'BIDDING') {
+    return;
+  }
+
+  // Some older failed/expired flows already restored the status to BIDDING but
+  // left these lock fields behind. Clean them so the customer can create a new
+  // deposit payment for the same job.
   await job.update({
-    current_status: 'BIDDING',
     selected_bid_id: null,
     deposit_transaction_id: null,
     deposit_amount: null
-  }, { transaction });
-
-  await JobStatusHistory.create({
-    job_id: job.id,
-    changed_by_user_id: changedByUserId,
-    old_status: 'PENDING_DEPOSIT',
-    new_status: 'BIDDING'
   }, { transaction });
 };
 
@@ -72,6 +90,16 @@ const markPendingTransactionService = async ({
     }
 
     if (paymentTransaction.status !== 'PENDING') {
+      if (
+        ['FAILED', 'EXPIRED'].includes(paymentTransaction.status)
+        && ['FAILED', 'EXPIRED'].includes(newStatus)
+      ) {
+        await restoreJobToBidding(paymentTransaction, {
+          transaction: trans,
+          changedByUserId
+        });
+      }
+
       await trans.commit();
       return {
         EM: "Transaction was already processed.",

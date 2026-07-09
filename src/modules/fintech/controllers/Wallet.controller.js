@@ -1,8 +1,10 @@
 import {
   createTopUpLinkService,
+  handlePayOSCancelService,
+  handlePayOSReturnService,
   handlePayOSWebhookService,
 } from "../services/PayOS.service.js";
-import { createVNPayTopUpLinkService, handleVNPayIPNService } from "../services/VNPay.service.js";
+import { createVNPayTopUpLinkService, handleVNPayIPNService, handleVNPayReturnService } from "../services/VNPay.service.js";
 import { getSystemWalletsService } from "../services/Wallet.service.js";
 
 const handleTopUpWallet = async (req, res) => {
@@ -68,6 +70,40 @@ const handlePayOSWebhook = async (req, res) => {
   }
 };
 
+const getCallbackHttpStatus = (errorCode) => {
+  if (errorCode === 0) return 200;
+  if ([400, 404, 409].includes(errorCode)) return errorCode;
+  return 500;
+};
+
+const handlePayOSReturn = async (req, res) => {
+  try {
+    const result = await handlePayOSReturnService(req.query);
+    return res.status(getCallbackHttpStatus(result.EC)).json(result);
+  } catch (error) {
+    console.error(">>> Error in handlePayOSReturn controller:", error);
+    return res.status(500).json({
+      EM: "Unable to process PayOS return.",
+      EC: 500,
+      DT: ""
+    });
+  }
+};
+
+const handlePayOSCancel = async (req, res) => {
+  try {
+    const result = await handlePayOSCancelService(req.query);
+    return res.status(getCallbackHttpStatus(result.EC)).json(result);
+  } catch (error) {
+    console.error(">>> Error in handlePayOSCancel controller:", error);
+    return res.status(500).json({
+      EM: "Unable to process PayOS cancellation.",
+      EC: 500,
+      DT: ""
+    });
+  }
+};
+
 const handleVNPayIPN = async (req, res) => {
   try {
     const vnpayParams = req.query; 
@@ -78,6 +114,21 @@ const handleVNPayIPN = async (req, res) => {
     return res.status(200).json({ 
       RspCode: '99', 
       Message: 'Unknown error' 
+    });
+  }
+};
+
+const handleVNPayReturn = async (req, res) => {
+  try {
+    const result = await handleVNPayReturnService(req.query);
+    const httpStatus = [400, 404, 409].includes(result.EC) ? result.EC : (result.EC === 0 ? 200 : 500);
+    return res.status(httpStatus).json(result);
+  } catch (error) {
+    console.log("Error in handleVNPayReturn controller: ", error);
+    return res.status(500).json({
+      EM: "Unable to process VNPay return.",
+      EC: 500,
+      DT: ""
     });
   }
 };
@@ -96,4 +147,12 @@ const handleGetSystemWallets = async (req, res) => {
   }
 };
 
-export { handleTopUpWallet, handlePayOSWebhook, handleVNPayIPN, handleGetSystemWallets };
+export {
+  handleTopUpWallet,
+  handlePayOSWebhook,
+  handlePayOSReturn,
+  handlePayOSCancel,
+  handleVNPayIPN,
+  handleVNPayReturn,
+  handleGetSystemWallets
+};

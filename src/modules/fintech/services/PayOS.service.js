@@ -4,6 +4,7 @@ import Wallet from "../models/Wallet.model.js";
 import User from '../../identity/models/User.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import {
+  processExpiredGatewayPayment,
   processFailedGatewayPayment,
   processSuccessfulGatewayPayment
 } from "./PaymentSettlement.service.js";
@@ -17,6 +18,8 @@ const getPublicBackendUrl = () => {
 };
 
 const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => {
+  let createdTransaction = null;
+
   try {
     if (!amount || amount <= 0) {
       return {
@@ -51,18 +54,18 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
             // Kiểm tra điều kiện C2 và trạng thái ký quỹ
             const profile = await HandymanProfile.findOne({ where: { user_id: userId } });
 
-            if (profile.security_bond_status === 'PAID') {
-                return { 
-                  EM: "Security bond is already paid.", 
-                  EC: 400, 
-                  DT: "" 
-                };
-            }
-            
             if (!profile || profile.handyman_level !== 'C2') {
                 return { 
                   EM: "You must pass KYC review (Level C2) before depositing the security bond.", 
                   EC: 403, 
+                  DT: "" 
+                };
+            }
+
+            if (profile.security_bond_status === 'PAID') {
+                return { 
+                  EM: "Security bond is already paid.", 
+                  EC: 400, 
                   DT: "" 
                 };
             }
@@ -96,7 +99,7 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
       String(Date.now()).slice(-6) + Math.floor(Math.random() * 100),
     );
 
-    await Transaction.create({
+    createdTransaction = await Transaction.create({
       amount: amount,
       transaction_type: txType,
       status: "PENDING",
@@ -114,6 +117,10 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
     const cancelUrl = process.env.PAYOS_TOPUP_CANCEL_URL
       || (publicBackendUrl ? `${publicBackendUrl}/api/v1/fintech/payos-cancel` : null)
       || process.env.PAYOS_CANCEL_URL;
+
+    if (!returnUrl || !cancelUrl) {
+      throw new Error("Missing PayOS top-up returnUrl or cancelUrl.");
+    }
 
     const bodyPayOS = {
       orderCode: orderCode,
@@ -134,6 +141,13 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
     };
   } catch (error) {
     console.log("Error in createTopUpLinkService: ", error);
+    if (createdTransaction?.status === 'PENDING') {
+      try {
+        await createdTransaction.update({ status: 'FAILED' });
+      } catch (updateError) {
+        console.error("Unable to mark failed PayOS top-up transaction:", updateError);
+      }
+    }
     return {
       EM: "Internal server error.",
       EC: 500,
@@ -205,8 +219,25 @@ const handlePayOSReturnService = async (queryParams) => {
       };
     }
 
-    if (['CANCELLED', 'FAILED', 'EXPIRED'].includes(gatewayStatus)) {
+    if (['CANCELLED', 'FAILED'].includes(gatewayStatus)) {
       const result = await processFailedGatewayPayment({
+        paymentMethod: 'PAYOS',
+        gatewayCode: orderCode
+      });
+
+      return {
+        EM: result.EM,
+        EC: result.EC,
+        DT: {
+          order_code: orderCode,
+          gateway_status: gatewayStatus,
+          settlement: result.DT
+        }
+      };
+    }
+
+    if (gatewayStatus === 'EXPIRED') {
+      const result = await processExpiredGatewayPayment({
         paymentMethod: 'PAYOS',
         gatewayCode: orderCode
       });
@@ -246,13 +277,48 @@ const handlePayOSCancelService = async (queryParams) => {
     const paymentLink = await payOSInstance.paymentRequests.get(orderCode);
     const gatewayStatus = paymentLink.status;
 
-    if (['PAID', 'PROCESSING'].includes(gatewayStatus)) {
+    if (gatewayStatus === 'PAID') {
+      const result = await processSuccessfulGatewayPayment({
+        paymentMethod: 'PAYOS',
+        gatewayCode: orderCode,
+        paidAmount: Number(paymentLink.amountPaid || paymentLink.amount)
+      });
+
       return {
-        EM: "PayOS payment is already paid or processing and cannot be marked as failed.",
+        EM: result.EM,
+        EC: result.EC,
+        DT: {
+          order_code: orderCode,
+          gateway_status: gatewayStatus,
+          settlement: result.DT
+        }
+      };
+    }
+
+    if (gatewayStatus === 'PROCESSING') {
+      return {
+        EM: "PayOS payment is processing and cannot be marked as failed.",
         EC: 409,
         DT: {
           order_code: orderCode,
           gateway_status: gatewayStatus
+        }
+      };
+    }
+
+    if (gatewayStatus === 'EXPIRED') {
+      const result = await processExpiredGatewayPayment({
+        paymentMethod: 'PAYOS',
+        gatewayCode: orderCode
+      });
+
+      return {
+        EM: result.EM,
+        EC: result.EC,
+        DT: {
+          order_code: orderCode,
+          gateway_status: gatewayStatus,
+          settlement: result.DT
         }
       };
     }

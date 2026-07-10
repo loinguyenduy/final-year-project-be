@@ -31,7 +31,6 @@
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.20.0",
     "pg-harness": "^0.2.1",
-    "qs": "^6.15.1",
     "sequelize": "^6.37.8"
   },
   "devDependencies": {

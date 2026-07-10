@@ -323,6 +323,19 @@ const processFailedGatewayPayment = async ({
   });
 };
 
+const processExpiredGatewayPayment = async ({
+  paymentMethod,
+  gatewayCode,
+  changedByUserId = null
+}) => {
+  return markPendingTransactionService({
+    paymentMethod,
+    gatewayCode,
+    newStatus: 'EXPIRED',
+    changedByUserId
+  });
+};
+
 const expireTransactionByIdService = async (transactionId) => {
   return markPendingTransactionService({
     transactionId,
@@ -341,6 +354,7 @@ const cancelTransactionByIdService = async (transactionId, customerId) => {
 export {
   processSuccessfulGatewayPayment,
   processFailedGatewayPayment,
+  processExpiredGatewayPayment,
   expireTransactionByIdService,
   cancelTransactionByIdService
 };

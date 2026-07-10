@@ -4,33 +4,35 @@ import {
   handlePayOSReturnService,
   handlePayOSWebhookService,
 } from "../services/PayOS.service.js";
-import { createVNPayTopUpLinkService, handleVNPayIPNService, handleVNPayReturnService } from "../services/VNPay.service.js";
 import { getSystemWalletsService } from "../services/Wallet.service.js";
+
+const getTopUpHttpStatus = (errorCode) => {
+  if (errorCode === 0) return 200;
+  if ([1, 400].includes(errorCode)) return 400;
+  if ([403, 404].includes(errorCode)) return errorCode;
+  return 500;
+};
 
 const handleTopUpWallet = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { amount, payment_method, target_wallet } = req.body;
+    const { amount, payment_method = "PAYOS", target_wallet } = req.body;
 
-    if (!amount || !payment_method) {
-      return res.status(400).json({ EM: "Amount and payment method are required.", EC: 400, DT: "" });
+    if (!amount) {
+      return res.status(400).json({ EM: "Amount is required.", EC: 400, DT: "" });
     }
 
-    let result;
-    if (payment_method === "PAYOS") {
-      result = await createTopUpLinkService(userId, amount, target_wallet);
-    } else if (payment_method === "VNPAY") {
-      const ipAddr = req.headers["x-forwarded-for"] || req.socket.remoteAddress || '127.0.0.1';
-      result = await createVNPayTopUpLinkService(userId, amount, ipAddr, target_wallet);
-    } else {
+    if (String(payment_method).toUpperCase() !== "PAYOS") {
       return res.status(400).json({ 
-        EM: "Unsupported payment method.", 
+        EM: "Unsupported payment method. PayOS is the only supported gateway.", 
         EC: 400, 
         DT: "" 
       });
     }
+
+    const result = await createTopUpLinkService(userId, amount, target_wallet);
     
-    return res.status(200).json({ 
+    return res.status(getTopUpHttpStatus(result.EC)).json({ 
       EM: result.EM, 
       EC: result.EC, 
       DT: result.DT 
@@ -104,35 +106,6 @@ const handlePayOSCancel = async (req, res) => {
   }
 };
 
-const handleVNPayIPN = async (req, res) => {
-  try {
-    const vnpayParams = req.query; 
-    const result = await handleVNPayIPNService(vnpayParams);
-    return res.status(200).json(result);
-  } catch (error) {
-    console.log("Error in handleVNPayIPN controller: ", error);
-    return res.status(200).json({ 
-      RspCode: '99', 
-      Message: 'Unknown error' 
-    });
-  }
-};
-
-const handleVNPayReturn = async (req, res) => {
-  try {
-    const result = await handleVNPayReturnService(req.query);
-    const httpStatus = [400, 404, 409].includes(result.EC) ? result.EC : (result.EC === 0 ? 200 : 500);
-    return res.status(httpStatus).json(result);
-  } catch (error) {
-    console.log("Error in handleVNPayReturn controller: ", error);
-    return res.status(500).json({
-      EM: "Unable to process VNPay return.",
-      EC: 500,
-      DT: ""
-    });
-  }
-};
-
 const handleGetSystemWallets = async (req, res) => {
   try {
     const result = await getSystemWalletsService();
@@ -152,7 +125,5 @@ export {
   handlePayOSWebhook,
   handlePayOSReturn,
   handlePayOSCancel,
-  handleVNPayIPN,
-  handleVNPayReturn,
   handleGetSystemWallets
 };

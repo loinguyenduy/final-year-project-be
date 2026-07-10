@@ -7,7 +7,6 @@ import {
   handleGetSystemWallets
 } from '../controllers/Wallet.controller.js';
 import {checkUserJWT, checkUserRole} from '../../../core/middlewares/auth.middleware.js';
-import { handleVNPayIPN, handleVNPayReturn } from '../controllers/Wallet.controller.js';
 
 const router = express.Router();
 
@@ -17,10 +16,5 @@ router.get('/wallets/system', checkUserJWT, checkUserRole(['ADMIN']), handleGetS
 router.post('/payos-webhook', handlePayOSWebhook);
 router.get('/payos-return', handlePayOSReturn);
 router.get('/payos-cancel', handlePayOSCancel);
-router.get('/payos-deposit-return', handlePayOSReturn);
-router.get('/payos-deposit-cancel', handlePayOSCancel);
-router.get('/vnpay-ipn', handleVNPayIPN);
-router.get('/vnpay-return', handleVNPayReturn);
-router.get('/vnpay-deposit-return', handleVNPayReturn);
 
 export default router;

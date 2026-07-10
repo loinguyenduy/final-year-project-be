@@ -26,7 +26,7 @@ const Transaction = db.define('Transaction', {
     payment_gateway_code: {
         type: DataTypes.STRING(50),
         allowNull: true,
-        comment: 'Store the orderCode from PayOS or VNPay transaction ID'
+        comment: 'Store the external payment gateway order code'
     },
     description: {
         type: DataTypes.STRING(255),

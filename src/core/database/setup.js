@@ -14,6 +14,7 @@ import Service from '../../modules/matchmaking/models/Service.model.js';
 import Job from '../../modules/matchmaking/models/Job.model.js';
 import Bid from '../../modules/matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../modules/matchmaking/models/JobStatusHistory.model.js';
+import JobCancellation from '../../modules/matchmaking/models/JobCancellation.model.js';
 import HandymanService from '../../modules/matchmaking/models/HandymanService.model.js';
 import HandymanServiceArea from '../../modules/matchmaking/models/HandymanServiceArea.model.js';
 
@@ -101,6 +102,12 @@ JobStatusHistory.belongsTo(Job, { foreignKey: 'job_id' });
 User.hasMany(JobStatusHistory, { foreignKey: 'changed_by_user_id' });
 JobStatusHistory.belongsTo(User, { foreignKey: 'changed_by_user_id' });
 
+Job.hasMany(JobCancellation, { foreignKey: 'job_id' });
+JobCancellation.belongsTo(Job, { foreignKey: 'job_id' });
+
+User.hasMany(JobCancellation, { foreignKey: 'cancelled_by_user_id' });
+JobCancellation.belongsTo(User, { as: 'CancelledByUser', foreignKey: 'cancelled_by_user_id' });
+
 // D. FINTECH (WALLET, TRANSACTION, EVIDENCE)
 User.hasMany(Wallet, { foreignKey: 'user_id' });
 Wallet.belongsTo(User, { foreignKey: 'user_id' });
@@ -116,6 +123,9 @@ Transaction.belongsTo(Job, { foreignKey: 'job_id' });
 
 Transaction.hasOne(Job, { as: 'DepositForJob', foreignKey: 'deposit_transaction_id' });
 Job.belongsTo(Transaction, { as: 'DepositTransaction', foreignKey: 'deposit_transaction_id' });
+
+Transaction.hasMany(Transaction, { as: 'RefundTransactions', foreignKey: 'reference_transaction_id' });
+Transaction.belongsTo(Transaction, { as: 'ReferenceTransaction', foreignKey: 'reference_transaction_id' });
 
 Job.hasMany(EvidenceVault, { foreignKey: 'job_id' });
 EvidenceVault.belongsTo(Job, { foreignKey: 'job_id' });
@@ -141,10 +151,17 @@ const initDatabase = async () => {
     try {
         await db.authenticate();
         console.log('Connection to PostgreSQL has been established successfully.');
-        // await db.sync({ alter: true });
-        console.log('All models were synchronized successfully.');
+        const shouldAlter = String(process.env.DB_SYNC_ALTER || '').toLowerCase() === 'true';
+        if (shouldAlter) {
+            console.warn('DB_SYNC_ALTER=true: synchronizing model changes with alter mode. Disable it after this run.');
+            await db.sync({ alter: true });
+            console.log('All models were synchronized successfully with alter mode.');
+        } else {
+            console.log('Automatic schema alteration is disabled.');
+        }
     } catch (error) {
         console.error('Unable to connect to the database:', error);
+        throw error;
     }
 };
 

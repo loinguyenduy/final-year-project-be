@@ -8,7 +8,15 @@ const Bid = db.define('Bid', {
     eta: { type: DataTypes.DATE, allowNull: true },
     estimated_duration_hours: { type: DataTypes.FLOAT, allowNull: true },
     status: {
-        type: DataTypes.ENUM('PENDING', 'WON', 'LOST', 'WITHDRAWN'),
+        type: DataTypes.ENUM(
+            'PENDING',
+            'WON',
+            'LOST',
+            'WITHDRAWN',
+            'CANCELLED_BY_CUSTOMER',
+            'CANCELLED_BY_HANDYMAN',
+            'EXPIRED'
+        ),
         defaultValue: 'PENDING'
     }
 }, { timestamps: true });

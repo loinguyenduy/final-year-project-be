@@ -14,6 +14,11 @@ const HandymanProfile = db.define('Handyman_Profile', {
         type: DataTypes.INTEGER, 
         defaultValue: 0 
     },
+    accepted_cancellation_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    },
     security_bond_status: { 
         type: DataTypes.ENUM('UNPAID', 'PAID', 'REFUNDED'), 
         defaultValue: 'UNPAID' 

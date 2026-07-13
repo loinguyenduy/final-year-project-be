@@ -12,7 +12,7 @@ const Transaction = db.define('Transaction', {
         allowNull: false 
     },
     transaction_type: { 
-        type: DataTypes.ENUM('TOP_UP', 'WITHDRAW', 'DEPOSIT_10', 'LOCK_100', 'PLATFORM_FEE_10', 'WARRANTY_HOLD_20', 'DISBURSE_80', 'WARRANTY_RELEASE', 'REFUND', 'BONDING_DEPOSIT'), 
+        type: DataTypes.ENUM('TOP_UP', 'WITHDRAW', 'DEPOSIT_10', 'LOCK_100', 'PLATFORM_FEE_10', 'WARRANTY_HOLD_20', 'DISBURSE_80', 'WARRANTY_RELEASE', 'REFUND', 'DEPOSIT_REFUND', 'BONDING_DEPOSIT'),
         allowNull: false 
     },
     status: { 
@@ -35,6 +35,10 @@ const Transaction = db.define('Transaction', {
     expires_at: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    reference_transaction_id: {
+        type: DataTypes.UUID,
+        allowNull: true
     }
 }, {
     timestamps: true,
@@ -54,6 +58,16 @@ const Transaction = db.define('Transaction', {
             where: {
                 transaction_type: 'DEPOSIT_10',
                 status: 'PENDING'
+            }
+        },
+        {
+            name: 'transactions_one_successful_refund_per_deposit',
+            unique: true,
+            fields: ['reference_transaction_id'],
+            where: {
+                transaction_type: 'DEPOSIT_REFUND',
+                status: 'SUCCESS',
+                reference_transaction_id: { [Op.ne]: null }
             }
         }
     ]

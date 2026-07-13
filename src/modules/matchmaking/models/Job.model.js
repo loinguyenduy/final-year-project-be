@@ -8,7 +8,14 @@ const Job = db.define('Job', {
     estimated_budget_max: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     final_agreed_price: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     deposit_amount: { type: DataTypes.DECIMAL(15, 2), allowNull: true },
+    deposit_status: {
+        type: DataTypes.ENUM('HELD', 'REFUNDED'),
+        allowNull: true
+    },
+    deposit_paid_at: { type: DataTypes.DATE, allowNull: true },
     accepted_at: { type: DataTypes.DATE, allowNull: true },
+    en_route_at: { type: DataTypes.DATE, allowNull: true },
+    cancelled_at: { type: DataTypes.DATE, allowNull: true },
     contact_unlocked_at: { type: DataTypes.DATE, allowNull: true },
     selected_bid_id: { type: DataTypes.UUID, allowNull: true },
     deposit_transaction_id: { type: DataTypes.UUID, allowNull: true },
@@ -21,7 +28,7 @@ const Job = db.define('Job', {
     scheduled_at: { type: DataTypes.DATE, allowNull: true },
     images: { type: DataTypes.JSON, defaultValue: [] },
     current_status: { 
-        type: DataTypes.ENUM('POSTED', 'BIDDING', 'PENDING_DEPOSIT', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'IN_PROGRESS', 'WARRANTY', 'CLOSED'),
+        type: DataTypes.ENUM('POSTED', 'BIDDING', 'PENDING_DEPOSIT', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'IN_PROGRESS', 'WARRANTY', 'CLOSED', 'CANCELLED'),
         defaultValue: 'POSTED' 
     }
 }, { timestamps: true });

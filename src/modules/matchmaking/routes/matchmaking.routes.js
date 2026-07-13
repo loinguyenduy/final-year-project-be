@@ -12,6 +12,11 @@ import {
 } from '../controllers/CustomerHandymanSelection.controller.js';
 import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
 import { uploadJobImagesMiddleware } from '../../../core/config/cloudinary.config.js';
+import { handleGetAcceptedDetails, handleStartMoving } from '../controllers/AcceptedJob.controller.js';
+import {
+    handleCancelByCustomer,
+    handleCancelByHandyman
+} from '../controllers/AcceptedCancellation.controller.js';
 
 const router = express.Router();
 
@@ -38,6 +43,32 @@ router.get('/jobs/:id/bids/:bidId/deposit-summary', checkUserJWT, checkUserRole(
 router.post('/jobs/:id/bids/:bidId/accept-with-wallet-deposit', checkUserJWT, checkUserRole(['CUSTOMER']), handleAcceptWithWalletDeposit);
 router.get('/jobs/:id/handymen/:handymanId/public-profile', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetPublicHandymanProfile);
 router.post('/bids/compare', checkUserJWT, checkUserRole(['CUSTOMER']), handleCompareBids);
+
+// ACCEPTED JOB
+router.get(
+    '/jobs/:id/accepted-details',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN']),
+    handleGetAcceptedDetails
+);
+router.post(
+    '/jobs/:id/cancel-by-customer',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handleCancelByCustomer
+);
+router.post(
+    '/jobs/:id/cancel-by-handyman',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleCancelByHandyman
+);
+router.post(
+    '/jobs/:id/start-moving',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleStartMoving
+);
 
 // COMMON JOB — must come after /jobs/available to avoid param collision
 router.get('/jobs/:id', checkUserJWT, handleGetJobDetails);

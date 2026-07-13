@@ -7,6 +7,19 @@ import Province from '../models/Province.model.js';
 import Ward from '../models/Ward.model.js';
 import db from '../../../core/database/connection.js';
 
+const serializeBid = (bid) => ({
+    id: bid.id,
+    job_id: bid.job_id,
+    handyman_id: bid.handyman_id,
+    proposed_price: Number(bid.proposed_price),
+    message: bid.message,
+    eta: bid.eta,
+    estimated_duration_hours: bid.estimated_duration_hours,
+    status: bid.status,
+    created_at: bid.createdAt,
+    updated_at: bid.updatedAt
+});
+
 const submitBidService = async (handymanId, jobId, bidData) => {
     const t = await db.transaction();
     try {
@@ -17,7 +30,10 @@ const submitBidService = async (handymanId, jobId, bidData) => {
             return { EM: "Proposed price must be a positive number.", EC: 400, DT: "" };
         }
 
-        const job = await Job.findByPk(jobId, { transaction: t });
+        const job = await Job.findByPk(jobId, {
+            transaction: t,
+            lock: t.LOCK.UPDATE
+        });
         if (!job) {
             await t.rollback();
             return { EM: "Job not found.", EC: 404, DT: "" };
@@ -34,6 +50,24 @@ const submitBidService = async (handymanId, jobId, bidData) => {
             return { EM: "You cannot bid on your own job.", EC: 403, DT: "" };
         }
 
+        const cancelledByHandymanBid = await Bid.findOne({
+            where: {
+                handyman_id: handymanId,
+                job_id: jobId,
+                status: 'CANCELLED_BY_HANDYMAN'
+            },
+            transaction: t
+        });
+        if (cancelledByHandymanBid) {
+            await t.rollback();
+            return {
+                EM: 'You cannot bid again on a job you cancelled after acceptance.',
+                EC: 409,
+                code: 'HANDYMAN_CANNOT_REBID_CANCELLED_JOB',
+                DT: ''
+            };
+        }
+
         const existingActiveBid = await Bid.findOne({
             where: {
                 handyman_id: handymanId,
@@ -45,6 +79,45 @@ const submitBidService = async (handymanId, jobId, bidData) => {
         if (existingActiveBid) {
             await t.rollback();
             return { EM: "You have already submitted a bid for this job.", EC: 400, DT: "" };
+        }
+
+        const customerCancelledBid = await Bid.findOne({
+            where: {
+                handyman_id: handymanId,
+                job_id: jobId,
+                status: 'CANCELLED_BY_CUSTOMER'
+            },
+            transaction: t
+        });
+
+        if (customerCancelledBid) {
+            await customerCancelledBid.update({
+                proposed_price,
+                message: message || null,
+                eta: eta ? new Date(eta) : null,
+                estimated_duration_hours: estimated_duration_hours
+                    ? Number(estimated_duration_hours)
+                    : null,
+                status: 'PENDING'
+            }, { transaction: t });
+
+            if (job.current_status === 'POSTED') {
+                await job.update({ current_status: 'BIDDING' }, { transaction: t });
+                await JobStatusHistory.create({
+                    job_id: jobId,
+                    changed_by_user_id: handymanId,
+                    old_status: 'POSTED',
+                    new_status: 'BIDDING'
+                }, { transaction: t });
+            }
+
+            await t.commit();
+            return {
+                EM: 'Customer-cancelled bid reactivated successfully.',
+                EC: 0,
+                DT: serializeBid(customerCancelledBid),
+                HTTP_STATUS: 200
+            };
         }
 
         const newBid = await Bid.create({
@@ -68,7 +141,12 @@ const submitBidService = async (handymanId, jobId, bidData) => {
         }
 
         await t.commit();
-        return { EM: "Bid submitted successfully.", EC: 0, DT: newBid };
+        return {
+            EM: "Bid submitted successfully.",
+            EC: 0,
+            DT: serializeBid(newBid),
+            HTTP_STATUS: 201
+        };
     } catch (error) {
         await t.rollback();
         console.log(">>> Error in submitBidService: ", error);

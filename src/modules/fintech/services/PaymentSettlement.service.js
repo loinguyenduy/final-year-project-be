@@ -264,6 +264,8 @@ const processSuccessfulGatewayPayment = async ({
         selected_handyman_id: selectedBid.handyman_id,
         final_agreed_price: selectedBid.proposed_price,
         deposit_amount: paymentTransaction.amount,
+        deposit_status: 'HELD',
+        deposit_paid_at: acceptedAt,
         current_status: 'ACCEPTED',
         accepted_at: acceptedAt,
         contact_unlocked_at: acceptedAt

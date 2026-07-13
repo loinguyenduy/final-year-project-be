@@ -6,6 +6,7 @@ import HandymanService from '../models/HandymanService.model.js';
 import HandymanServiceArea from '../models/HandymanServiceArea.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import User from '../../identity/models/User.model.js';
+import Bid from '../models/Bid.model.js';
 import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 
@@ -50,19 +51,34 @@ const getAvailableJobsForHandymanService = async (handymanId, {
 } = {}) => {
     try {
         // Step 1: Fetch handyman profile data in parallel
-        const [handymanServices, serviceAreas, handymanProfile] = await Promise.all([
+        const [handymanServices, serviceAreas, handymanProfile, cancelledBidRows] = await Promise.all([
             HandymanService.findAll({ where: { handyman_id: handymanId }, attributes: ['service_id'] }),
             HandymanServiceArea.findAll({ where: { handyman_id: handymanId }, attributes: ['province_code', 'ward_code'] }),
-            HandymanProfile.findOne({ where: { user_id: handymanId }, attributes: ['preferred_work_times'] })
+            HandymanProfile.findOne({ where: { user_id: handymanId }, attributes: ['preferred_work_times'] }),
+            Bid.findAll({
+                where: {
+                    handyman_id: handymanId,
+                    status: 'CANCELLED_BY_HANDYMAN'
+                },
+                attributes: ['job_id'],
+                raw: true
+            })
         ]);
 
         const serviceIds = handymanServices.map(s => s.service_id);
         const preferred_work_times = handymanProfile?.preferred_work_times ?? [];
+        const cancelledJobIds = [
+            ...new Set(cancelledBidRows.map((bid) => bid.job_id).filter(Boolean))
+        ];
 
         // Step 2: Build SQL WHERE clause
         const andConditions = [
             { current_status: { [Op.in]: ['POSTED', 'BIDDING'] } }
         ];
+
+        if (cancelledJobIds.length > 0) {
+            andConditions.push({ id: { [Op.notIn]: cancelledJobIds } });
+        }
 
         // Specialty filter — explicit service_id param overrides profile specialties
         if (service_id) {

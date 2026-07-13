@@ -22,7 +22,15 @@ const getDetailedProfileService = async (userId) => {
             include: [
                 {
                     model: HandymanProfile,
-                    attributes: ['handyman_level', 'bayesian_score', 'total_jobs_completed', 'security_bond_status', 'bio', 'preferred_work_times']
+                    attributes: [
+                        'handyman_level',
+                        'bayesian_score',
+                        'total_jobs_completed',
+                        'accepted_cancellation_count',
+                        'security_bond_status',
+                        'bio',
+                        'preferred_work_times'
+                    ]
                 },
                 {
                     model: Wallet,

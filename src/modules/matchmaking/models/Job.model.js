@@ -17,6 +17,12 @@ const Job = db.define('Job', {
     en_route_at: { type: DataTypes.DATE, allowNull: true },
     cancelled_at: { type: DataTypes.DATE, allowNull: true },
     contact_unlocked_at: { type: DataTypes.DATE, allowNull: true },
+    acceptance_cycle: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        validate: { min: 0 }
+    },
     selected_bid_id: { type: DataTypes.UUID, allowNull: true },
     deposit_transaction_id: { type: DataTypes.UUID, allowNull: true },
     province_code: { type: DataTypes.STRING(2), allowNull: true }, 

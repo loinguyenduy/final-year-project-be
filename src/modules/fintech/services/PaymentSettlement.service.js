@@ -1,10 +1,10 @@
-import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import Transaction from '../models/Transaction.model.js';
 import Wallet from '../models/Wallet.model.js';
 import Job from '../../matchmaking/models/Job.model.js';
 import Bid from '../../matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../matchmaking/models/JobStatusHistory.model.js';
+import { transitionJobToAccepted } from '../../matchmaking/services/AcceptedTransition.service.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 
 const restoreJobToBidding = async (paymentTransaction, {
@@ -246,37 +246,15 @@ const processSuccessfulGatewayPayment = async ({
         { transaction: trans }
       );
       await paymentTransaction.update({ status: 'SUCCESS' }, { transaction: trans });
-      await selectedBid.update({ status: 'WON' }, { transaction: trans });
-      await Bid.update(
-        { status: 'LOST' },
-        {
-          where: {
-            job_id: job.id,
-            id: { [Op.ne]: selectedBid.id },
-            status: 'PENDING'
-          },
-          transaction: trans
-        }
-      );
-
-      const acceptedAt = new Date();
-      await job.update({
-        selected_handyman_id: selectedBid.handyman_id,
-        final_agreed_price: selectedBid.proposed_price,
-        deposit_amount: paymentTransaction.amount,
-        deposit_status: 'HELD',
-        deposit_paid_at: acceptedAt,
-        current_status: 'ACCEPTED',
-        accepted_at: acceptedAt,
-        contact_unlocked_at: acceptedAt
-      }, { transaction: trans });
-
-      await JobStatusHistory.create({
-        job_id: job.id,
-        changed_by_user_id: job.customer_id,
-        old_status: 'PENDING_DEPOSIT',
-        new_status: 'ACCEPTED'
-      }, { transaction: trans });
+      await transitionJobToAccepted({
+        job,
+        selectedBid,
+        depositTransaction: paymentTransaction,
+        depositAmount: paymentTransaction.amount,
+        changedByUserId: job.customer_id,
+        sourceStatus: 'PENDING_DEPOSIT',
+        transaction: trans
+      });
     } else {
       await destinationWallet.increment(
         { balance: Number(paymentTransaction.amount) },

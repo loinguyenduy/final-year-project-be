@@ -12,6 +12,8 @@ import {
     serviceError,
     validateAcceptedJobInvariants
 } from './AcceptedJob.service.js';
+import { CONVERSATION_CLOSED_REASONS } from '../../chat/constants/chat.constants.js';
+import { bestEffortCloseConversationForJobCycle } from '../../chat/services/ConversationLifecycle.service.js';
 
 const CUSTOMER_ACTIONS = ['REOPEN_BIDDING', 'CANCEL_JOB'];
 const CUSTOMER_REASON_CODES = [
@@ -207,6 +209,7 @@ const cancelByCustomerService = async (jobId, customerId, payload) => {
             return validation.error;
         }
 
+        const acceptanceCycle = Number(job.acceptance_cycle || 0);
         const refundResult = await refundHeldDeposit(job, transaction);
         if (refundResult.error) {
             await transaction.rollback();
@@ -261,6 +264,14 @@ const cancelByCustomerService = async (jobId, customerId, payload) => {
         }, { transaction });
 
         await transaction.commit();
+        await bestEffortCloseConversationForJobCycle({
+            jobId: job.id,
+            acceptanceCycle,
+            reason: isReopen
+                ? CONVERSATION_CLOSED_REASONS.CUSTOMER_REOPEN_BIDDING
+                : CONVERSATION_CLOSED_REASONS.CUSTOMER_CANCELLED_JOB,
+            closedByUserId: customerId
+        });
         return {
             EM: isReopen
                 ? 'Job returned to bidding and deposit refunded.'
@@ -323,6 +334,7 @@ const cancelByHandymanService = async (jobId, handymanId, payload) => {
             return validation.error;
         }
 
+        const acceptanceCycle = Number(job.acceptance_cycle || 0);
         const handymanProfile = await HandymanProfile.findOne({
             where: { user_id: handymanId },
             transaction,
@@ -384,6 +396,12 @@ const cancelByHandymanService = async (jobId, handymanId, payload) => {
         }, { transaction });
 
         await transaction.commit();
+        await bestEffortCloseConversationForJobCycle({
+            jobId: job.id,
+            acceptanceCycle,
+            reason: CONVERSATION_CLOSED_REASONS.HANDYMAN_CANCELLED,
+            closedByUserId: handymanId
+        });
         return {
             EM: 'Accepted job cancelled by handyman and deposit refunded.',
             EC: 0,

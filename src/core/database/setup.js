@@ -23,6 +23,8 @@ import Transaction from '../../modules/fintech/models/Transaction.model.js';
 import EvidenceVault from '../../modules/fintech/models/EvidenceVault.model.js';
 import EContract from '../../modules/fintech/models/EContract.model.js';
 import Review from '../../modules/dispute/models/Review.model.js';
+import Conversation from '../../modules/chat/models/Conversation.model.js';
+import Message from '../../modules/chat/models/Message.model.js';
 
 // A. IDENTITY & USER ASSOCIATIONS
 User.hasMany(AuthProvider, { foreignKey: 'user_id' });
@@ -108,7 +110,29 @@ JobCancellation.belongsTo(Job, { foreignKey: 'job_id' });
 User.hasMany(JobCancellation, { foreignKey: 'cancelled_by_user_id' });
 JobCancellation.belongsTo(User, { as: 'CancelledByUser', foreignKey: 'cancelled_by_user_id' });
 
-// D. FINTECH (WALLET, TRANSACTION, EVIDENCE)
+// E. CHAT
+Job.hasMany(Conversation, { as: 'ChatConversations', foreignKey: 'job_id' });
+Conversation.belongsTo(Job, { foreignKey: 'job_id' });
+
+User.hasMany(Conversation, { as: 'CustomerChatConversations', foreignKey: 'customer_id' });
+Conversation.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+
+User.hasMany(Conversation, { as: 'HandymanChatConversations', foreignKey: 'handyman_id' });
+Conversation.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+
+User.hasMany(Conversation, { as: 'ClosedChatConversations', foreignKey: 'closed_by_user_id' });
+Conversation.belongsTo(User, { as: 'ClosedByUser', foreignKey: 'closed_by_user_id' });
+
+Bid.hasMany(Conversation, { as: 'ChatConversations', foreignKey: 'selected_bid_id' });
+Conversation.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
+
+Conversation.hasMany(Message, { as: 'Messages', foreignKey: 'conversation_id' });
+Message.belongsTo(Conversation, { foreignKey: 'conversation_id' });
+
+User.hasMany(Message, { as: 'SentChatMessages', foreignKey: 'sender_id' });
+Message.belongsTo(User, { as: 'Sender', foreignKey: 'sender_id' });
+
+// F. FINTECH (WALLET, TRANSACTION, EVIDENCE)
 User.hasMany(Wallet, { foreignKey: 'user_id' });
 Wallet.belongsTo(User, { foreignKey: 'user_id' });
 
@@ -136,9 +160,66 @@ EvidenceVault.belongsTo(User, { foreignKey: 'uploader_id' });
 Job.hasOne(EContract, { foreignKey: 'job_id' });
 EContract.belongsTo(Job, { foreignKey: 'job_id' });
 
-// E. DISPUTE & REVIEWS
+// G. DISPUTE & REVIEWS
 Job.hasMany(Review, { foreignKey: 'job_id' });
 Review.belongsTo(Job, { foreignKey: 'job_id' });
+const verifyChatIndexes = async () => {
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Conversations'
+          AND indexname IN (
+            'conversations_job_acceptance_cycle_unique',
+            'conversations_one_active_per_job'
+          )
+    `);
+    const byName = new Map(indexes.map((index) => [index.indexname, index.indexdef]));
+    const cycleIndex = String(byName.get('conversations_job_acceptance_cycle_unique') || '');
+    const activeIndex = String(byName.get('conversations_one_active_per_job') || '');
+
+    if (!cycleIndex.includes('UNIQUE')
+        || !cycleIndex.includes('job_id')
+        || !cycleIndex.includes('acceptance_cycle')) {
+        throw new Error(
+            'Required chat constraint conversations_job_acceptance_cycle_unique was not created by sync alter.'
+        );
+    }
+    if (!activeIndex.includes('UNIQUE')
+        || !activeIndex.includes('WHERE')
+        || !activeIndex.includes('ACTIVE')) {
+        console.error(
+            '[chat] WARNING: sync alter did not create partial unique index '
+            + 'conversations_one_active_per_job. Service locking remains active, but the defense-in-depth '
+            + 'database constraint is missing.'
+        );
+    } else {
+        console.log('Chat conversation indexes verified successfully.');
+    }
+};
+
+const reportChatIndexSyncFailure = (error) => {
+    const errorText = [
+        error?.message,
+        error?.original?.message,
+        error?.parent?.message,
+        error?.sql
+    ].filter(Boolean).join(' ');
+
+    if (errorText.includes('conversations_one_active_per_job')) {
+        console.error(
+            '[chat] ERROR: DB_SYNC_ALTER could not create the partial unique index '
+            + 'conversations_one_active_per_job. Resolve duplicate ACTIVE conversations or the '
+            + 'reported PostgreSQL error before starting the application.'
+        );
+    }
+    if (errorText.includes('conversations_job_acceptance_cycle_unique')) {
+        console.error(
+            '[chat] ERROR: DB_SYNC_ALTER could not create the mandatory unique constraint/index '
+            + 'conversations_job_acceptance_cycle_unique. The application will not start without it.'
+        );
+    }
+};
 
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
@@ -154,11 +235,17 @@ const initDatabase = async () => {
         const shouldAlter = String(process.env.DB_SYNC_ALTER || '').toLowerCase() === 'true';
         if (shouldAlter) {
             console.warn('DB_SYNC_ALTER=true: synchronizing model changes with alter mode. Disable it after this run.');
-            await db.sync({ alter: true });
+            try {
+                await db.sync({ alter: true });
+            } catch (error) {
+                reportChatIndexSyncFailure(error);
+                throw error;
+            }
             console.log('All models were synchronized successfully with alter mode.');
         } else {
             console.log('Automatic schema alteration is disabled.');
         }
+        await verifyChatIndexes();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

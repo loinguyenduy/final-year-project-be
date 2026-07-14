@@ -1,8 +1,7 @@
-import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import Job from '../../matchmaking/models/Job.model.js';
 import Bid from '../../matchmaking/models/Bid.model.js';
-import JobStatusHistory from '../../matchmaking/models/JobStatusHistory.model.js';
+import { transitionJobToAccepted } from '../../matchmaking/services/AcceptedTransition.service.js';
 import Transaction from '../models/Transaction.model.js';
 import Wallet from '../models/Wallet.model.js';
 
@@ -195,39 +194,15 @@ const acceptBidWithWalletDepositService = async (customerId, jobId, bidId) => {
       expires_at: null
     }, { transaction: trans });
 
-    await bid.update({ status: 'WON' }, { transaction: trans });
-    await Bid.update(
-      { status: 'LOST' },
-      {
-        where: {
-          job_id: job.id,
-          id: { [Op.ne]: bid.id },
-          status: 'PENDING'
-        },
-        transaction: trans
-      }
-    );
-
-    const acceptedAt = new Date();
-    await job.update({
-      selected_bid_id: bid.id,
-      selected_handyman_id: bid.handyman_id,
-      final_agreed_price: bid.proposed_price,
-      deposit_amount: depositAmount,
-      deposit_status: 'HELD',
-      deposit_paid_at: acceptedAt,
-      deposit_transaction_id: depositTransaction.id,
-      current_status: 'ACCEPTED',
-      accepted_at: acceptedAt,
-      contact_unlocked_at: acceptedAt
-    }, { transaction: trans });
-
-    await JobStatusHistory.create({
-      job_id: job.id,
-      changed_by_user_id: customerId,
-      old_status: 'BIDDING',
-      new_status: 'ACCEPTED'
-    }, { transaction: trans });
+    const acceptedTransition = await transitionJobToAccepted({
+      job,
+      selectedBid: bid,
+      depositTransaction,
+      depositAmount,
+      changedByUserId: customerId,
+      sourceStatus: 'BIDDING',
+      transaction: trans
+    });
 
     await trans.commit();
 
@@ -242,14 +217,15 @@ const acceptBidWithWalletDepositService = async (customerId, jobId, bidId) => {
         final_agreed_price: toMoneyNumber(bid.proposed_price),
         deposit_amount: depositAmount,
         deposit_status: 'HELD',
-        deposit_paid_at: acceptedAt,
+        deposit_paid_at: acceptedTransition.acceptedAt,
         deposit_transaction_id: depositTransaction.id,
         transaction_status: 'SUCCESS',
         payment_method: 'INTERNAL',
         customer_wallet_balance: newCustomerBalance,
         system_escrow_balance: newEscrowBalance,
-        accepted_at: acceptedAt,
-        contact_unlocked_at: acceptedAt
+        accepted_at: acceptedTransition.acceptedAt,
+        contact_unlocked_at: acceptedTransition.acceptedAt,
+        acceptance_cycle: acceptedTransition.acceptanceCycle
       }
     };
   } catch (error) {

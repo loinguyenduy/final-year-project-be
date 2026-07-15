@@ -1,16 +1,13 @@
 import { verifyToken } from "../utils/jwt.util.js";
 
-//Get token from header or cookie
+// Protected APIs accept access tokens only. The refresh cookie is reserved for
+// /auth/refresh and must never be verified with the access-token secret.
 const extractToken = (req) => {
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.split(" ")[0] === "Bearer"
-  ) {
-    return req.headers.authorization.split(" ")[1];
-  } else if (req.cookies && req.cookies.refreshToken) {
-    return req.cookies.refreshToken;
-  }
-  return null;
+  const authorization = req.headers.authorization;
+  if (!authorization || typeof authorization !== "string") return null;
+
+  const [scheme, token] = authorization.trim().split(/\s+/);
+  return scheme?.toLowerCase() === "bearer" && token ? token : null;
 };
 
 // Check valid JWT and attach user info to request object

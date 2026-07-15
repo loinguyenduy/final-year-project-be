@@ -2,6 +2,7 @@ const CHAT_ALLOWED_JOB_STATUSES = Object.freeze([
   'ACCEPTED',
   'EN_ROUTE',
   'ARRIVED',
+  'QUOTE_PENDING',
   'IN_PROGRESS',
   'WARRANTY'
 ]);

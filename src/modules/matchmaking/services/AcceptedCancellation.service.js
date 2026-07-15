@@ -130,7 +130,7 @@ const reopenEligibleLostBids = async (jobId, selectedBidId, transaction) => {
 
 const ensureAcceptedAndHeld = (job) => {
     if (job.current_status !== 'ACCEPTED') {
-        if (['EN_ROUTE', 'ARRIVED'].includes(job.current_status)) {
+        if (['EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING'].includes(job.current_status)) {
             return serviceError(
                 'Cancellation is not supported for the current job status.',
                 409,

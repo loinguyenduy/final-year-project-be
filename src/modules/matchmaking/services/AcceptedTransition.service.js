@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import Bid from '../models/Bid.model.js';
 import JobArrivalRequest from '../models/JobArrivalRequest.model.js';
+import JobQuote from '../models/JobQuote.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 
 const assertTransitionInput = ({
@@ -83,6 +84,14 @@ const transitionJobToAccepted = async ({
     },
     {
       where: { job_id: job.id, status: 'PENDING' },
+      transaction
+    }
+  );
+
+  await JobQuote.update(
+    { status: 'SUPERSEDED' },
+    {
+      where: { job_id: job.id, status: 'DRAFT' },
       transaction
     }
   );

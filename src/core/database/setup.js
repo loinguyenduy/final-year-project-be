@@ -16,6 +16,8 @@ import Bid from '../../modules/matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../modules/matchmaking/models/JobStatusHistory.model.js';
 import JobCancellation from '../../modules/matchmaking/models/JobCancellation.model.js';
 import JobArrivalRequest from '../../modules/matchmaking/models/JobArrivalRequest.model.js';
+import JobQuote from '../../modules/matchmaking/models/JobQuote.model.js';
+import JobQuoteItem from '../../modules/matchmaking/models/JobQuoteItem.model.js';
 import HandymanService from '../../modules/matchmaking/models/HandymanService.model.js';
 import HandymanServiceArea from '../../modules/matchmaking/models/HandymanServiceArea.model.js';
 
@@ -99,6 +101,25 @@ Job.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
 User.hasMany(Bid, { foreignKey: 'handyman_id' });
 Bid.belongsTo(User, { foreignKey: 'handyman_id' });
 
+Job.hasMany(JobQuote, { as: 'Quotes', foreignKey: 'job_id' });
+JobQuote.belongsTo(Job, { foreignKey: 'job_id' });
+
+User.hasMany(JobQuote, { as: 'CustomerQuotes', foreignKey: 'customer_id' });
+JobQuote.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+
+User.hasMany(JobQuote, { as: 'HandymanQuotes', foreignKey: 'handyman_id' });
+JobQuote.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+
+Bid.hasMany(JobQuote, { as: 'InspectionQuotes', foreignKey: 'selected_bid_id' });
+JobQuote.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
+
+JobQuote.hasMany(JobQuoteItem, {
+    as: 'Items',
+    foreignKey: 'quote_id',
+    onDelete: 'CASCADE'
+});
+JobQuoteItem.belongsTo(JobQuote, { foreignKey: 'quote_id' });
+
 Job.hasMany(JobStatusHistory, { foreignKey: 'job_id' });
 JobStatusHistory.belongsTo(Job, { foreignKey: 'job_id' });
 
@@ -167,11 +188,20 @@ Job.belongsTo(Transaction, { as: 'DepositTransaction', foreignKey: 'deposit_tran
 Transaction.hasMany(Transaction, { as: 'RefundTransactions', foreignKey: 'reference_transaction_id' });
 Transaction.belongsTo(Transaction, { as: 'ReferenceTransaction', foreignKey: 'reference_transaction_id' });
 
-Job.hasMany(EvidenceVault, { foreignKey: 'job_id' });
+Job.hasMany(EvidenceVault, { as: 'EvidenceVaults', foreignKey: 'job_id' });
 EvidenceVault.belongsTo(Job, { foreignKey: 'job_id' });
 
-User.hasMany(EvidenceVault, { foreignKey: 'uploader_id' });
-EvidenceVault.belongsTo(User, { foreignKey: 'uploader_id' });
+User.hasMany(EvidenceVault, { as: 'UploadedEvidence', foreignKey: 'uploader_id' });
+EvidenceVault.belongsTo(User, { as: 'Uploader', foreignKey: 'uploader_id' });
+
+User.hasMany(EvidenceVault, { as: 'CustomerEvidence', foreignKey: 'customer_id' });
+EvidenceVault.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+
+User.hasMany(EvidenceVault, { as: 'HandymanEvidence', foreignKey: 'handyman_id' });
+EvidenceVault.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+
+Bid.hasMany(EvidenceVault, { as: 'EvidenceVaults', foreignKey: 'selected_bid_id' });
+EvidenceVault.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
 
 Job.hasOne(EContract, { foreignKey: 'job_id' });
 EContract.belongsTo(Job, { foreignKey: 'job_id' });
@@ -242,6 +272,14 @@ const reportIndexSyncFailure = (error) => {
             + 'requests for the same job/cycle before starting the application.'
         );
     }
+    if (errorText.includes('job_quotes_one_draft_per_cycle')
+        || errorText.includes('job_quotes_job_cycle_version_unique')
+        || errorText.includes('job_quote_items_quote_sort_unique')) {
+        console.error(
+            '[matchmaking] ERROR: DB_SYNC_ALTER could not create the mandatory Job Quote indexes. '
+            + 'Resolve duplicate quote drafts or versions for the same job/cycle before restarting.'
+        );
+    }
 };
 
 const verifyArrivalRequestIndexes = async () => {
@@ -264,6 +302,59 @@ const verifyArrivalRequestIndexes = async () => {
         );
     }
     console.log('Arrival request indexes verified successfully.');
+};
+
+const verifyJobQuoteIndexes = async () => {
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Job_Quotes'
+          AND indexname IN (
+            'job_quotes_job_cycle_version_unique',
+            'job_quotes_one_draft_per_cycle'
+          )
+    `);
+    const byName = new Map(indexes.map((index) => [index.indexname, index.indexdef]));
+    const versionIndex = String(byName.get('job_quotes_job_cycle_version_unique') || '');
+    const draftIndex = String(byName.get('job_quotes_one_draft_per_cycle') || '');
+    const [itemIndexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Job_Quote_Items'
+          AND indexname = 'job_quote_items_quote_sort_unique'
+    `);
+    const itemSortIndex = String(itemIndexes[0]?.indexdef || '');
+
+    if (!versionIndex.includes('UNIQUE')
+        || !versionIndex.includes('job_id')
+        || !versionIndex.includes('acceptance_cycle')
+        || !versionIndex.includes('version')) {
+        throw new Error(
+            'Required unique index job_quotes_job_cycle_version_unique is missing. '
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    if (!draftIndex.includes('UNIQUE')
+        || !draftIndex.includes('job_id')
+        || !draftIndex.includes('acceptance_cycle')
+        || !draftIndex.includes('WHERE')
+        || !draftIndex.includes('DRAFT')) {
+        throw new Error(
+            'Required partial unique index job_quotes_one_draft_per_cycle is missing. '
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    if (!itemSortIndex.includes('UNIQUE')
+        || !itemSortIndex.includes('quote_id')
+        || !itemSortIndex.includes('sort_order')) {
+        throw new Error(
+            'Required unique index job_quote_items_quote_sort_unique is missing. '
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    console.log('Job Quote indexes verified successfully.');
 };
 
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
@@ -292,6 +383,7 @@ const initDatabase = async () => {
         }
         await verifyChatIndexes();
         await verifyArrivalRequestIndexes();
+        await verifyJobQuoteIndexes();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

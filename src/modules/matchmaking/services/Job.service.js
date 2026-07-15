@@ -210,7 +210,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
         }
 
         const contactUnlockedStatuses = [
-            'ACCEPTED', 'EN_ROUTE', 'ARRIVED',
+            'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING',
             'IN_PROGRESS', 'WARRANTY', 'CLOSED'
         ];
         const contactIsUnlocked = Boolean(responseData.contact_unlocked_at)

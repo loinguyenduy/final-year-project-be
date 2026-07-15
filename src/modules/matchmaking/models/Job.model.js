@@ -53,7 +53,19 @@ const Job = db.define('Job', {
     scheduled_at: { type: DataTypes.DATE, allowNull: true },
     images: { type: DataTypes.JSON, defaultValue: [] },
     current_status: { 
-        type: DataTypes.ENUM('POSTED', 'BIDDING', 'PENDING_DEPOSIT', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'IN_PROGRESS', 'WARRANTY', 'CLOSED', 'CANCELLED'),
+        type: DataTypes.ENUM(
+            'POSTED',
+            'BIDDING',
+            'PENDING_DEPOSIT',
+            'ACCEPTED',
+            'EN_ROUTE',
+            'ARRIVED',
+            'QUOTE_PENDING',
+            'IN_PROGRESS',
+            'WARRANTY',
+            'CLOSED',
+            'CANCELLED'
+        ),
         defaultValue: 'POSTED' 
     }
 }, { timestamps: true });

@@ -4,7 +4,8 @@ const JOB_LIFECYCLE_EVENTS = Object.freeze({
     EN_ROUTE: 'JOB_EN_ROUTE',
     ARRIVAL_REQUESTED: 'JOB_ARRIVAL_REQUESTED',
     ARRIVAL_REJECTED: 'JOB_ARRIVAL_REJECTED',
-    ARRIVED: 'JOB_ARRIVED'
+    ARRIVED: 'JOB_ARRIVED',
+    QUOTE_SUBMITTED: 'JOB_QUOTE_SUBMITTED'
 });
 
 const emitJobLifecycleEvent = ({ event, userIds, payload }) => {

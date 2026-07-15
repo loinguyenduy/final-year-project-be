@@ -1,6 +1,7 @@
 import { fn, col } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import Review from '../../dispute/models/Review.model.js';
+import EvidenceVault from '../../fintech/models/EvidenceVault.model.js';
 import Transaction from '../../fintech/models/Transaction.model.js';
 import Wallet from '../../fintech/models/Wallet.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
@@ -10,6 +11,8 @@ import Job from '../models/Job.model.js';
 import JobCancellation from '../models/JobCancellation.model.js';
 import JobArrivalRequest from '../models/JobArrivalRequest.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
+import JobQuote from '../models/JobQuote.model.js';
+import JobQuoteItem from '../models/JobQuoteItem.model.js';
 import Service from '../models/Service.model.js';
 import { parseCoordinatePair } from '../utils/location.util.js';
 import {
@@ -25,6 +28,12 @@ import {
     JOB_LIFECYCLE_EVENTS,
     emitJobLifecycleEvent
 } from '../sockets/JobLifecycle.gateway.js';
+import {
+    buildSubmitReadiness,
+    getQuoteConfig,
+    normalizeStoredQuote,
+    toCanonicalMoneyString
+} from '../utils/quote.util.js';
 
 const serviceError = (EM, EC, code, DT = '') => ({ EM, EC, code, DT });
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -204,12 +213,41 @@ const buildAllowedActions = ({
     isAdmin,
     pendingRequest,
     reviewRequired,
-    retryAfterSeconds
+    retryAfterSeconds,
+    currentQuote,
+    beforeEvidenceCount,
+    quoteReadiness,
+    quoteConfig
 }) => {
     if (isAdmin) return [];
     if (job.current_status === 'ACCEPTED') {
         if (isCustomer) return ['REOPEN_BIDDING', 'CANCEL_JOB'];
         if (isSelectedHandyman) return ['START_MOVING', 'CANCEL_ACCEPTED_JOB'];
+        return [];
+    }
+    if (job.current_status === 'ARRIVED') {
+        if (isCustomer) return ['WAIT_FOR_QUOTE'];
+        if (!isSelectedHandyman) return [];
+
+        const actions = [];
+        const evidenceLocked = currentQuote && currentQuote.status !== 'DRAFT';
+        if (!evidenceLocked) {
+            if (beforeEvidenceCount < quoteConfig.beforeEvidenceMaxFiles) {
+                actions.push('UPLOAD_BEFORE_EVIDENCE');
+            }
+            if (beforeEvidenceCount > 0) actions.push('DELETE_BEFORE_EVIDENCE');
+        }
+        if (!currentQuote) {
+            actions.push('CREATE_QUOTE_DRAFT');
+        } else if (currentQuote.status === 'DRAFT') {
+            actions.push('UPDATE_QUOTE_DRAFT');
+            if (quoteReadiness?.ready) actions.push('SUBMIT_QUOTE');
+        }
+        return actions;
+    }
+    if (job.current_status === 'QUOTE_PENDING') {
+        if (isCustomer) return ['VIEW_QUOTE'];
+        if (isSelectedHandyman) return ['WAIT_FOR_CUSTOMER_QUOTE_RESPONSE'];
         return [];
     }
     if (job.current_status !== 'EN_ROUTE') return [];
@@ -252,7 +290,7 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             );
         }
 
-        if (!['ACCEPTED', 'EN_ROUTE', 'ARRIVED'].includes(job.current_status)) {
+        if (!['ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING'].includes(job.current_status)) {
             return serviceError(
                 'Job is not in an accepted lifecycle status.',
                 409,
@@ -294,7 +332,14 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
         }
 
         const lifecycleConfig = getJobLifecycleConfig();
-        const [latestArrivalRequest, rejectionCount, latestRejectedRequest] = await Promise.all([
+        const quoteConfig = getQuoteConfig();
+        const [
+            latestArrivalRequest,
+            rejectionCount,
+            latestRejectedRequest,
+            currentQuote,
+            beforeEvidenceCount
+        ] = await Promise.all([
             JobArrivalRequest.findOne({
                 where: { job_id: job.id, acceptance_cycle: job.acceptance_cycle },
                 order: [['requested_at', 'DESC'], ['createdAt', 'DESC']]
@@ -313,8 +358,46 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     status: 'REJECTED'
                 },
                 order: [['responded_at', 'DESC'], ['updatedAt', 'DESC']]
+            }),
+            JobQuote.findOne({
+                where: {
+                    job_id: job.id,
+                    acceptance_cycle: job.acceptance_cycle,
+                    version: 1
+                }
+            }),
+            EvidenceVault.count({
+                where: {
+                    job_id: job.id,
+                    acceptance_cycle: job.acceptance_cycle,
+                    customer_id: job.customer_id,
+                    handyman_id: job.selected_handyman_id,
+                    selected_bid_id: job.selected_bid_id,
+                    uploader_id: job.selected_handyman_id,
+                    stage: 'BEFORE',
+                    media_type: 'IMAGE'
+                }
             })
         ]);
+        const quoteItems = currentQuote
+            ? await JobQuoteItem.findAll({
+                where: { quote_id: currentQuote.id },
+                order: [['sort_order', 'ASC']]
+            })
+            : [];
+        const normalizedQuote = currentQuote
+            ? normalizeStoredQuote(currentQuote, quoteItems, selectedBid.proposed_price)
+            : null;
+        const quoteReadiness = !currentQuote
+            ? null
+            : normalizedQuote.valid
+                ? buildSubmitReadiness({ normalized: normalizedQuote, evidenceCount: beforeEvidenceCount })
+                : {
+                    ready: false,
+                    missing_requirements: ['INVALID_DRAFT_DATA'],
+                    before_evidence_count: beforeEvidenceCount,
+                    variance_reason_required: false
+                };
         const pendingRequest = latestArrivalRequest?.status === 'PENDING'
             ? latestArrivalRequest
             : null;
@@ -329,6 +412,23 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                 lifecycleConfig.arrivalCooldownSeconds
             );
         const canSeeHandymanRawGps = isAdmin || isSelectedHandyman;
+        const canSeeDraftQuote = isAdmin || isSelectedHandyman;
+        const inspectionQuote = currentQuote
+            && (currentQuote.status === 'SUBMITTED' || canSeeDraftQuote)
+            ? {
+                id: currentQuote.id,
+                status: currentQuote.status,
+                version: Number(currentQuote.version),
+                ...(canSeeDraftQuote
+                    ? { draft_revision: Number(currentQuote.draft_revision) }
+                    : {}),
+                total_amount: toCanonicalMoneyString(currentQuote.total_amount),
+                currency: currentQuote.currency,
+                submitted_at: currentQuote.submitted_at,
+                before_evidence_count: beforeEvidenceCount,
+                ...(canSeeDraftQuote ? { readiness: quoteReadiness } : {})
+            }
+            : null;
 
         const deposit = (isCustomer || isAdmin)
             ? {
@@ -398,6 +498,7 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     review_required: reviewRequired,
                     retry_after_seconds: retryAfterSeconds || null
                 },
+                inspection_quote: inspectionQuote,
                 allowed_actions: buildAllowedActions({
                     job,
                     isCustomer,
@@ -405,7 +506,11 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     isAdmin,
                     pendingRequest,
                     reviewRequired,
-                    retryAfterSeconds
+                    retryAfterSeconds,
+                    currentQuote,
+                    beforeEvidenceCount,
+                    quoteReadiness,
+                    quoteConfig
                 })
             }
         };

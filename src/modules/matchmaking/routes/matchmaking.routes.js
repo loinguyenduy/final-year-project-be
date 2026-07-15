@@ -27,6 +27,17 @@ import {
     handleRejectArrival,
     handleRequestArrival
 } from '../controllers/Arrival.controller.js';
+import {
+    handleCreateOrGetQuoteDraft,
+    handleGetCurrentQuote,
+    handleSubmitQuote,
+    handleUpdateQuoteDraft
+} from '../controllers/Quote.controller.js';
+import {
+    handleDeleteBeforeEvidence,
+    handleListBeforeEvidence,
+    handleUploadBeforeEvidence
+} from '../controllers/InspectionEvidence.controller.js';
 
 const router = express.Router();
 
@@ -98,6 +109,52 @@ router.post(
     checkUserJWT,
     checkUserRole(['CUSTOMER']),
     handleRejectArrival
+);
+
+// ARRIVED INSPECTION EVIDENCE
+router.post(
+    '/jobs/:jobId/evidence/before',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleUploadBeforeEvidence
+);
+router.get(
+    '/jobs/:jobId/evidence/before',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    handleListBeforeEvidence
+);
+router.delete(
+    '/jobs/:jobId/evidence/before/:evidenceId',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleDeleteBeforeEvidence
+);
+
+// ARRIVED INSPECTION QUOTE
+router.post(
+    '/jobs/:jobId/quotes/draft',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleCreateOrGetQuoteDraft
+);
+router.put(
+    '/jobs/:jobId/quotes/:quoteId',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleUpdateQuoteDraft
+);
+router.post(
+    '/jobs/:jobId/quotes/:quoteId/submit',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleSubmitQuote
+);
+router.get(
+    '/jobs/:jobId/quotes/current',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    handleGetCurrentQuote
 );
 
 // COMMON JOB — must come after /jobs/available to avoid param collision

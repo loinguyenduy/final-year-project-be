@@ -2,6 +2,7 @@ import { fn, col, Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import Review from '../../dispute/models/Review.model.js';
 import EvidenceVault from '../../fintech/models/EvidenceVault.model.js';
+import EContract from '../../fintech/models/EContract.model.js';
 import Transaction from '../../fintech/models/Transaction.model.js';
 import Wallet from '../../fintech/models/Wallet.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
@@ -38,6 +39,11 @@ import {
     ACTIVE_CANCELLATION_STATUSES,
     buildCancellationDto
 } from '../utils/cancellationPolicy.util.js';
+import {
+    buildContractSummaryDto,
+    buildPaymentSummaryDto,
+    calculateQuotePaymentAmounts
+} from '../utils/quotePayment.util.js';
 
 const serviceError = (EM, EC, code, DT = '') => ({ EM, EC, code, DT });
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -264,11 +270,25 @@ const buildAllowedActions = ({
         return actions;
     }
     if (job.current_status === 'QUOTE_PENDING') {
-        if (isCustomer) return ['VIEW_QUOTE', 'REQUEST_CANCELLATION'];
+        if (isCustomer) {
+            return ['VIEW_QUOTE', 'ACCEPT_QUOTE', 'REJECT_QUOTE', 'REQUEST_CANCELLATION'];
+        }
         if (isSelectedHandyman) {
             return ['WAIT_FOR_CUSTOMER_QUOTE_RESPONSE', 'REQUEST_CANCELLATION'];
         }
         return [];
+    }
+    if (job.current_status === 'PAYMENT_PENDING') {
+        if (isCustomer) {
+            return ['VIEW_PAYMENT_SUMMARY', 'PAY_REMAINING_AMOUNT', 'REQUEST_CANCELLATION'];
+        }
+        if (isSelectedHandyman) {
+            return ['WAIT_FOR_CUSTOMER_PAYMENT', 'REQUEST_CANCELLATION'];
+        }
+        return [];
+    }
+    if (job.current_status === 'IN_PROGRESS') {
+        return isCustomer || isSelectedHandyman ? ['VIEW_ACTIVE_CONTRACT'] : [];
     }
     if (job.current_status !== 'EN_ROUTE') return [];
 
@@ -316,7 +336,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             'EN_ROUTE',
             'ARRIVED',
             'QUOTE_PENDING',
-            'CANCELLATION_REVIEW'
+            'PAYMENT_PENDING',
+            'CANCELLATION_REVIEW',
+            'IN_PROGRESS'
         ].includes(job.current_status)) {
             return serviceError(
                 'Job is not in an accepted lifecycle status.',
@@ -366,7 +388,8 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             latestRejectedRequest,
             currentQuote,
             beforeEvidenceCount,
-            currentCancellation
+            currentCancellation,
+            currentContract
         ] = await Promise.all([
             JobArrivalRequest.findOne({
                 where: { job_id: job.id, acceptance_cycle: job.acceptance_cycle },
@@ -413,6 +436,12 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     status: { [Op.in]: ACTIVE_CANCELLATION_STATUSES }
                 },
                 order: [['createdAt', 'DESC']]
+            }),
+            EContract.findOne({
+                where: {
+                    job_id: job.id,
+                    acceptance_cycle: job.acceptance_cycle
+                }
             })
         ]);
         const quoteItems = currentQuote
@@ -449,8 +478,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             );
         const canSeeHandymanRawGps = isAdmin || isSelectedHandyman;
         const canSeeDraftQuote = isAdmin || isSelectedHandyman;
+        const participantVisibleQuoteStatuses = ['SUBMITTED', 'ACCEPTED', 'REJECTED'];
         const inspectionQuote = currentQuote
-            && (currentQuote.status === 'SUBMITTED' || canSeeDraftQuote)
+            && (participantVisibleQuoteStatuses.includes(currentQuote.status) || canSeeDraftQuote)
             ? {
                 id: currentQuote.id,
                 status: currentQuote.status,
@@ -461,10 +491,30 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                 total_amount: toCanonicalMoneyString(currentQuote.total_amount),
                 currency: currentQuote.currency,
                 submitted_at: currentQuote.submitted_at,
+                accepted_at: currentQuote.accepted_at,
+                rejected_at: currentQuote.rejected_at,
+                rejection_reason: currentQuote.rejection_reason,
                 before_evidence_count: beforeEvidenceCount,
                 ...(canSeeDraftQuote ? { readiness: quoteReadiness } : {})
             }
             : null;
+        let payment = null;
+        if (currentQuote?.status === 'ACCEPTED' && normalizedQuote?.valid) {
+            const paymentAmounts = calculateQuotePaymentAmounts({
+                quoteTotalAmount: normalizedQuote.total,
+                jobDepositAmount: job.deposit_amount,
+                depositTransactionAmount: validation.depositTransaction.amount
+            });
+            if (!paymentAmounts.valid) {
+                return serviceError(paymentAmounts.message, 409, paymentAmounts.code);
+            }
+            payment = buildPaymentSummaryDto({
+                job,
+                quote: currentQuote,
+                contract: currentContract,
+                amounts: paymentAmounts
+            });
+        }
 
         const deposit = (isCustomer || isAdmin)
             ? {
@@ -498,7 +548,8 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     gps_long: job.gps_long == null ? null : Number(job.gps_long),
                     accepted_at: job.accepted_at,
                     acceptance_cycle: Number(job.acceptance_cycle),
-                    arrived_at: job.arrived_at
+                    arrived_at: job.arrived_at,
+                    in_progress_at: job.in_progress_at
                 },
                 selected_bid: {
                     id: selectedBid.id,
@@ -535,6 +586,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     retry_after_seconds: retryAfterSeconds || null
                 },
                 inspection_quote: inspectionQuote,
+                quote: inspectionQuote,
+                payment,
+                contract: buildContractSummaryDto(currentContract),
                 cancellation: buildCancellationDto(currentCancellation),
                 allowed_actions: buildAllowedActions({
                     job,

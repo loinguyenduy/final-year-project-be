@@ -22,6 +22,7 @@ const Job = db.define('Job', {
     en_route_estimated_arrival_minutes: { type: DataTypes.INTEGER, allowNull: true },
     arrived_at: { type: DataTypes.DATE, allowNull: true },
     arrival_confirmed_by_user_id: { type: DataTypes.UUID, allowNull: true },
+    in_progress_at: { type: DataTypes.DATE, allowNull: true },
     cancelled_at: { type: DataTypes.DATE, allowNull: true },
     contact_unlocked_at: { type: DataTypes.DATE, allowNull: true },
     acceptance_cycle: {
@@ -61,6 +62,7 @@ const Job = db.define('Job', {
             'EN_ROUTE',
             'ARRIVED',
             'QUOTE_PENDING',
+            'PAYMENT_PENDING',
             'CANCELLATION_REVIEW',
             'IN_PROGRESS',
             'WARRANTY',

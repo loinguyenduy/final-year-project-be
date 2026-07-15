@@ -110,6 +110,9 @@ JobQuote.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
 User.hasMany(JobQuote, { as: 'HandymanQuotes', foreignKey: 'handyman_id' });
 JobQuote.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
 
+User.hasMany(JobQuote, { as: 'RespondedQuotes', foreignKey: 'customer_response_by_user_id' });
+JobQuote.belongsTo(User, { as: 'CustomerResponseBy', foreignKey: 'customer_response_by_user_id' });
+
 Bid.hasMany(JobQuote, { as: 'InspectionQuotes', foreignKey: 'selected_bid_id' });
 JobQuote.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
 
@@ -203,6 +206,12 @@ Transaction.belongsTo(Transaction, { as: 'ReferenceTransaction', foreignKey: 're
 JobCancellation.hasMany(Transaction, { as: 'PayoutTransactions', foreignKey: 'cancellation_id' });
 Transaction.belongsTo(JobCancellation, { as: 'Cancellation', foreignKey: 'cancellation_id' });
 
+JobQuote.hasMany(Transaction, { as: 'PaymentTransactions', foreignKey: 'quote_id' });
+Transaction.belongsTo(JobQuote, { as: 'Quote', foreignKey: 'quote_id' });
+
+User.hasMany(Transaction, { as: 'PaidTransactions', foreignKey: 'payer_user_id' });
+Transaction.belongsTo(User, { as: 'Payer', foreignKey: 'payer_user_id' });
+
 Transaction.hasMany(JobCancellation, {
     as: 'CustomerRefundCancellations',
     foreignKey: 'customer_refund_transaction_id'
@@ -245,8 +254,29 @@ EvidenceVault.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
 Bid.hasMany(EvidenceVault, { as: 'EvidenceVaults', foreignKey: 'selected_bid_id' });
 EvidenceVault.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
 
-Job.hasOne(EContract, { foreignKey: 'job_id' });
+Job.hasMany(EContract, { as: 'ServiceContracts', foreignKey: 'job_id' });
 EContract.belongsTo(Job, { foreignKey: 'job_id' });
+
+JobQuote.hasOne(EContract, { as: 'ServiceContract', foreignKey: 'quote_id' });
+EContract.belongsTo(JobQuote, { as: 'Quote', foreignKey: 'quote_id' });
+
+User.hasMany(EContract, { as: 'CustomerContracts', foreignKey: 'customer_id' });
+EContract.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+
+User.hasMany(EContract, { as: 'HandymanContracts', foreignKey: 'handyman_id' });
+EContract.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+
+Bid.hasMany(EContract, { as: 'ServiceContracts', foreignKey: 'selected_bid_id' });
+EContract.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
+
+Transaction.hasOne(EContract, {
+    as: 'ActivatedContract',
+    foreignKey: 'remaining_payment_transaction_id'
+});
+EContract.belongsTo(Transaction, {
+    as: 'RemainingPaymentTransaction',
+    foreignKey: 'remaining_payment_transaction_id'
+});
 
 // G. DISPUTE & REVIEWS
 Job.hasMany(Review, { foreignKey: 'job_id' });
@@ -327,6 +357,15 @@ const reportIndexSyncFailure = (error) => {
         console.error(
             '[matchmaking] ERROR: DB_SYNC_ALTER could not create the mandatory cancellation indexes. '
             + 'Resolve duplicate active cancellations or transaction idempotency keys before restarting.'
+        );
+    }
+    if (errorText.includes('transactions_one_successful_remaining_payment_per_quote')
+        || errorText.includes('e_contracts_job_cycle_unique')
+        || errorText.includes('e_contracts_quote_unique')
+        || errorText.includes('e_contracts_contract_number_unique')) {
+        console.error(
+            '[fintech] ERROR: DB_SYNC_ALTER could not create the required remaining-payment '
+            + 'or service-contract indexes. Resolve duplicate rows before restarting.'
         );
     }
 };
@@ -446,6 +485,57 @@ const verifyCancellationIndexes = async () => {
     console.log('Cancellation indexes verified successfully.');
 };
 
+const verifyQuotePaymentIndexes = async () => {
+    const [transactionIndexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Transactions'
+          AND indexname = 'transactions_one_successful_remaining_payment_per_quote'
+    `);
+    const paymentIndex = String(transactionIndexes[0]?.indexdef || '');
+    if (!paymentIndex.includes('UNIQUE')
+        || !paymentIndex.includes('job_id')
+        || !paymentIndex.includes('acceptance_cycle')
+        || !paymentIndex.includes('quote_id')
+        || !paymentIndex.includes('SERVICE_REMAINING_PAYMENT')
+        || !paymentIndex.includes('SUCCESS')) {
+        throw new Error(
+            'Required unique index transactions_one_successful_remaining_payment_per_quote '
+            + 'is missing. Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+
+    const [contractIndexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'E_Contracts'
+          AND indexname IN (
+            'e_contracts_job_cycle_unique',
+            'e_contracts_quote_unique',
+            'e_contracts_contract_number_unique'
+          )
+    `);
+    const byName = new Map(contractIndexes.map((index) => [index.indexname, index.indexdef]));
+    const requiredContractIndexes = [
+        ['e_contracts_job_cycle_unique', ['job_id', 'acceptance_cycle']],
+        ['e_contracts_quote_unique', ['quote_id']],
+        ['e_contracts_contract_number_unique', ['contract_number']]
+    ];
+    for (const [name, fields] of requiredContractIndexes) {
+        const definition = String(byName.get(name) || '');
+        if (!definition.includes('UNIQUE')
+            || fields.some((field) => !definition.includes(field))) {
+            throw new Error(
+                `Required service-contract unique index ${name} is missing. `
+                + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+            );
+        }
+    }
+    console.log('Quote payment and service-contract indexes verified successfully.');
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -474,6 +564,7 @@ const initDatabase = async () => {
         await verifyArrivalRequestIndexes();
         await verifyJobQuoteIndexes();
         await verifyCancellationIndexes();
+        await verifyQuotePaymentIndexes();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

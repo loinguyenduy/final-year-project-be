@@ -140,7 +140,8 @@ const transitionJobToAccepted = async ({
     en_route_distance_meters: null,
     en_route_estimated_arrival_minutes: null,
     arrived_at: null,
-    arrival_confirmed_by_user_id: null
+    arrival_confirmed_by_user_id: null,
+    in_progress_at: null
   }, { transaction });
 
   await JobStatusHistory.create({

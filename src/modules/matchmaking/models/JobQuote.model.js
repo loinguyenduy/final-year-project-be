@@ -81,7 +81,16 @@ const JobQuote = db.define('Job_Quote', {
         allowNull: true
     },
     variance_reason_text: { type: DataTypes.TEXT, allowNull: true },
-    submitted_at: { type: DataTypes.DATE, allowNull: true }
+    submitted_at: { type: DataTypes.DATE, allowNull: true },
+    customer_responded_at: { type: DataTypes.DATE, allowNull: true },
+    customer_response_by_user_id: { type: DataTypes.UUID, allowNull: true },
+    accepted_at: { type: DataTypes.DATE, allowNull: true },
+    rejected_at: { type: DataTypes.DATE, allowNull: true },
+    rejection_reason: {
+        type: DataTypes.ENUM('FINAL_QUOTE_TOO_HIGH', 'FINAL_QUOTE_NOT_ACCEPTABLE'),
+        allowNull: true
+    },
+    rejection_reason_text: { type: DataTypes.TEXT, allowNull: true }
 }, {
     timestamps: true,
     indexes: [

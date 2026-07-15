@@ -34,8 +34,10 @@ import {
     handleRequestArrival
 } from '../controllers/Arrival.controller.js';
 import {
+    handleAcceptQuote,
     handleCreateOrGetQuoteDraft,
     handleGetCurrentQuote,
+    handleRejectQuote,
     handleSubmitQuote,
     handleUpdateQuoteDraft
 } from '../controllers/Quote.controller.js';
@@ -44,6 +46,11 @@ import {
     handleListBeforeEvidence,
     handleUploadBeforeEvidence
 } from '../controllers/InspectionEvidence.controller.js';
+import {
+    handleGetContract,
+    handleGetPaymentSummary,
+    handlePayRemainingAmount
+} from '../controllers/QuotePayment.controller.js';
 
 const router = express.Router();
 
@@ -185,6 +192,38 @@ router.get(
     checkUserJWT,
     checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
     handleGetCurrentQuote
+);
+router.post(
+    '/jobs/:jobId/quotes/:quoteId/accept',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handleAcceptQuote
+);
+router.post(
+    '/jobs/:jobId/quotes/:quoteId/reject',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handleRejectQuote
+);
+
+// QUOTE PAYMENT AND IMMUTABLE CONTRACT
+router.post(
+    '/jobs/:jobId/payments/remaining',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handlePayRemainingAmount
+);
+router.get(
+    '/jobs/:jobId/payment-summary',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    handleGetPaymentSummary
+);
+router.get(
+    '/jobs/:jobId/contract',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    handleGetContract
 );
 
 // COMMON JOB — must come after /jobs/available to avoid param collision

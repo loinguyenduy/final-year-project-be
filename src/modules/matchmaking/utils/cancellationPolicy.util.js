@@ -1,7 +1,8 @@
 const CANCELLABLE_JOB_STATUSES = Object.freeze([
     'EN_ROUTE',
     'ARRIVED',
-    'QUOTE_PENDING'
+    'QUOTE_PENDING',
+    'PAYMENT_PENDING'
 ]);
 
 const ACTIVE_CANCELLATION_STATUSES = Object.freeze([
@@ -10,7 +11,7 @@ const ACTIVE_CANCELLATION_STATUSES = Object.freeze([
 ]);
 
 const ALL_PHASES = CANCELLABLE_JOB_STATUSES;
-const ARRIVED_AND_QUOTE = Object.freeze(['ARRIVED', 'QUOTE_PENDING']);
+const ARRIVED_AND_QUOTE = Object.freeze(['ARRIVED', 'QUOTE_PENDING', 'PAYMENT_PENDING']);
 const EN_ROUTE_AND_ARRIVED = Object.freeze(['EN_ROUTE', 'ARRIVED']);
 
 const auto = (phases, classification) => ({
@@ -34,8 +35,14 @@ const CANCELLATION_REASON_POLICY = Object.freeze({
         NO_LONGER_NEEDED: auto(ALL_PHASES, 'CUSTOMER_FAULT'),
         WRONG_JOB_INFORMATION: auto(ALL_PHASES, 'CUSTOMER_FAULT'),
         SCOPE_CHANGED: auto(ARRIVED_AND_QUOTE, 'CUSTOMER_FAULT'),
-        FINAL_QUOTE_TOO_HIGH: auto(['QUOTE_PENDING'], 'NEUTRAL_QUOTE_REJECTION'),
-        FINAL_QUOTE_NOT_ACCEPTABLE: auto(['QUOTE_PENDING'], 'NEUTRAL_QUOTE_REJECTION'),
+        FINAL_QUOTE_TOO_HIGH: auto(
+            ['QUOTE_PENDING', 'PAYMENT_PENDING'],
+            'NEUTRAL_QUOTE_REJECTION'
+        ),
+        FINAL_QUOTE_NOT_ACCEPTABLE: auto(
+            ['QUOTE_PENDING', 'PAYMENT_PENDING'],
+            'NEUTRAL_QUOTE_REJECTION'
+        ),
         HANDYMAN_NOT_PROGRESSING: review(EN_ROUTE_AND_ARRIVED),
         HANDYMAN_NOT_PRESENT: review(['EN_ROUTE']),
         HANDYMAN_UNPROFESSIONAL: review(ALL_PHASES),
@@ -70,6 +77,12 @@ const CUSTOMER_PERCENT_BY_PHASE_AND_CLASSIFICATION = Object.freeze({
         NEUTRAL: 50
     }),
     QUOTE_PENDING: Object.freeze({
+        CUSTOMER_FAULT: 30,
+        HANDYMAN_FAULT: 100,
+        NEUTRAL: 50,
+        NEUTRAL_QUOTE_REJECTION: 70
+    }),
+    PAYMENT_PENDING: Object.freeze({
         CUSTOMER_FAULT: 30,
         HANDYMAN_FAULT: 100,
         NEUTRAL: 50,

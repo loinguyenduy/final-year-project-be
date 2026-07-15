@@ -65,13 +65,21 @@ const validateEvidenceWritableJob = async (job, handymanId, transaction = null) 
     const selectedError = ensureSelectedHandyman(job, handymanId);
     if (selectedError) return { error: selectedError };
     if (job.current_status !== 'ARRIVED') {
+        const evidenceLockedStatuses = [
+            'QUOTE_PENDING',
+            'PAYMENT_PENDING',
+            'CANCELLATION_REVIEW',
+            'IN_PROGRESS',
+            'CANCELLED'
+        ];
+        const evidenceLocked = evidenceLockedStatuses.includes(job.current_status);
         return {
             error: serviceError(
-                job.current_status === 'QUOTE_PENDING'
+                evidenceLocked
                     ? 'BEFORE evidence is locked after Quote submission.'
                     : 'Job must be ARRIVED to manage BEFORE evidence.',
                 409,
-                job.current_status === 'QUOTE_PENDING' ? 'EVIDENCE_LOCKED' : 'JOB_NOT_ARRIVED',
+                evidenceLocked ? 'EVIDENCE_LOCKED' : 'JOB_NOT_ARRIVED',
                 { current_status: job.current_status }
             )
         };
@@ -310,7 +318,9 @@ const listBeforeEvidenceService = async (jobId, currentUser) => {
         }
 
         const currentQuote = await findCurrentQuote(job);
-        if (isCustomer && (!currentQuote || currentQuote.status !== 'SUBMITTED')) {
+        const customerVisibleQuoteStatuses = ['SUBMITTED', 'ACCEPTED', 'REJECTED'];
+        if (isCustomer
+            && (!currentQuote || !customerVisibleQuoteStatuses.includes(currentQuote.status))) {
             return serviceError('Evidence not found.', 404, 'EVIDENCE_NOT_FOUND');
         }
         const evidence = await EvidenceVault.findAll({

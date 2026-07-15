@@ -478,172 +478,212 @@ const resolveCancellationInTransaction = async ({
     return { depositStatus };
 };
 
+const applyLifecycleCancellationInTransaction = async ({
+    job,
+    currentUser,
+    payload,
+    transaction
+}) => {
+    const participantRole = getParticipantRole(job, currentUser);
+    if (!participantRole) {
+        return {
+            error: serviceError(
+                'Only current job participants can request cancellation.',
+                403,
+                'FORBIDDEN_JOB_ACCESS'
+            )
+        };
+    }
+
+    const acceptanceCycle = Number(job.acceptance_cycle);
+    if (!Number.isInteger(acceptanceCycle) || acceptanceCycle < 1) {
+        return {
+            error: serviceError(
+                'Job acceptance cycle is inconsistent.',
+                409,
+                'ACCEPTANCE_CYCLE_INCONSISTENT'
+            )
+        };
+    }
+
+    const existing = await findCurrentCancellation(job, transaction, true);
+    if (existing) {
+        if (isSameCancellationRetry(existing, currentUser, payload)) {
+            return {
+                result: existingCancellationResult(existing),
+                cancellation: existing,
+                event: null,
+                created: false
+            };
+        }
+        return {
+            error: serviceError(
+                existing.status === 'RESOLVED'
+                    ? 'This job cancellation has already been resolved.'
+                    : 'A cancellation is already active for this job acceptance cycle.',
+                409,
+                existing.status === 'RESOLVED'
+                    ? 'CANCELLATION_ALREADY_RESOLVED'
+                    : 'CANCELLATION_ALREADY_ACTIVE',
+                { cancellation_id: existing.id, status: existing.status }
+            )
+        };
+    }
+
+    if (!CANCELLABLE_JOB_STATUSES.includes(job.current_status)) {
+        return {
+            error: serviceError(
+                'Cancellation is not supported for the current job status.',
+                409,
+                'CANCELLATION_NOT_ALLOWED_IN_CURRENT_STATUS',
+                { current_status: job.current_status }
+            )
+        };
+    }
+
+    const validatedPayload = validateCancellationPayload(
+        payload,
+        participantRole,
+        job.current_status
+    );
+    if (!validatedPayload.valid) {
+        return {
+            error: serviceError(validatedPayload.message, 400, 'VALIDATION_ERROR')
+        };
+    }
+
+    const invariant = await validateLateLifecycleInvariants(job, transaction);
+    if (invariant.error) return { error: invariant.error };
+
+    const requiresReview = validatedPayload.resolutionMode === 'ADMIN_REVIEW';
+    const awaitsCounterparty = validatedPayload.resolutionMode
+        === 'COUNTERPARTY_ACKNOWLEDGEMENT';
+    const distribution = requiresReview
+        ? null
+        : calculateCancellationDistribution({
+            depositAmount: invariant.depositAmount,
+            phase: job.current_status,
+            classification: validatedPayload.classification
+        });
+    if (distribution && !distribution.valid) {
+        return {
+            error: serviceError(
+                distribution.message,
+                409,
+                'CANCELLATION_POLICY_NOT_CONFIGURED'
+            )
+        };
+    }
+
+    const requestedAt = new Date();
+    const cancellation = await JobCancellation.create({
+        job_id: job.id,
+        acceptance_cycle: invariant.acceptanceCycle,
+        cancelled_by_user_id: currentUser.id,
+        cancelled_by_role: participantRole,
+        status_when_cancelled: job.current_status,
+        cancellation_action: 'LIFECYCLE_CANCEL',
+        reason_code: validatedPayload.reason,
+        reason_text: validatedPayload.reasonText,
+        classification: validatedPayload.classification,
+        resolution_mode: validatedPayload.resolutionMode,
+        status: requiresReview
+            ? 'REVIEW_REQUIRED'
+            : awaitsCounterparty
+                ? 'AWAITING_COUNTERPARTY'
+                : 'RESOLVED',
+        deposit_amount: invariant.depositAmount.toString(),
+        refund_amount: distribution?.customerAmount?.toString() ?? null,
+        handyman_compensation_amount: distribution?.handymanAmount?.toString() ?? null,
+        platform_amount: distribution?.platformAmount?.toString() ?? null,
+        penalty_amount: 0,
+        requested_at: requestedAt
+    }, { transaction });
+
+    let code;
+    let message;
+    let event;
+    if (!requiresReview && !awaitsCounterparty) {
+        const resolved = await resolveCancellationInTransaction({
+            job,
+            cancellation,
+            invariant,
+            distribution,
+            resolvedByUserId: currentUser.id,
+            resolutionNote: 'AUTO_POLICY',
+            transaction
+        });
+        if (resolved.error) return { error: resolved.error };
+        code = 'CANCELLATION_RESOLVED';
+        message = 'Job cancellation was resolved successfully.';
+        event = JOB_LIFECYCLE_EVENTS.CANCELLED;
+    } else {
+        await job.update({ current_status: 'CANCELLATION_REVIEW' }, { transaction });
+        await supersedePendingArrival(job, cancellation, transaction);
+        await JobStatusHistory.create({
+            job_id: job.id,
+            changed_by_user_id: currentUser.id,
+            old_status: cancellation.status_when_cancelled,
+            new_status: 'CANCELLATION_REVIEW',
+            reason: `LIFECYCLE_CANCELLATION_REQUESTED:${cancellation.id}`
+        }, { transaction });
+
+        if (requiresReview) {
+            code = 'CANCELLATION_REVIEW_REQUIRED';
+            message = 'Cancellation requires review. The deposit remains held.';
+            event = JOB_LIFECYCLE_EVENTS.CANCELLATION_REVIEW_REQUIRED;
+        } else {
+            code = 'CANCELLATION_AWAITING_COUNTERPARTY';
+            message = 'Cancellation is awaiting counterparty confirmation.';
+            event = JOB_LIFECYCLE_EVENTS.CANCELLATION_REQUESTED;
+        }
+    }
+
+    return {
+        result: {
+            EM: message,
+            EC: 0,
+            code,
+            DT: buildCancellationDto(cancellation)
+        },
+        cancellation,
+        event,
+        created: true
+    };
+};
+
 const createCancellationService = async (jobId, currentUser, payload) => {
     if (!isValidUuid(jobId)) {
         return serviceError('Invalid job id.', 400, 'VALIDATION_ERROR');
     }
 
     const transaction = await db.transaction();
-    let event = null;
     try {
         const job = await Job.findByPk(jobId, {
             transaction,
             lock: transaction.LOCK.UPDATE
         });
-        if (!job) return rollbackWith(transaction, serviceError('Job not found.', 404, 'JOB_NOT_FOUND'));
-
-        const participantRole = getParticipantRole(job, currentUser);
-        if (!participantRole) {
-            return rollbackWith(
-                transaction,
-                serviceError('Only current job participants can request cancellation.', 403, 'FORBIDDEN_JOB_ACCESS')
-            );
+        if (!job) {
+            return rollbackWith(transaction, serviceError('Job not found.', 404, 'JOB_NOT_FOUND'));
         }
 
-        const acceptanceCycle = Number(job.acceptance_cycle);
-        if (!Number.isInteger(acceptanceCycle) || acceptanceCycle < 1) {
-            return rollbackWith(
-                transaction,
-                serviceError('Job acceptance cycle is inconsistent.', 409, 'ACCEPTANCE_CYCLE_INCONSISTENT')
-            );
-        }
-
-        const existing = await findCurrentCancellation(job, transaction, true);
-        if (existing) {
-            if (isSameCancellationRetry(existing, currentUser, payload)) {
-                await transaction.commit();
-                return existingCancellationResult(existing);
-            }
-            return rollbackWith(
-                transaction,
-                serviceError(
-                    existing.status === 'RESOLVED'
-                        ? 'This job cancellation has already been resolved.'
-                        : 'A cancellation is already active for this job acceptance cycle.',
-                    409,
-                    existing.status === 'RESOLVED'
-                        ? 'CANCELLATION_ALREADY_RESOLVED'
-                        : 'CANCELLATION_ALREADY_ACTIVE',
-                    { cancellation_id: existing.id, status: existing.status }
-                )
-            );
-        }
-
-        if (!CANCELLABLE_JOB_STATUSES.includes(job.current_status)) {
-            return rollbackWith(
-                transaction,
-                serviceError(
-                    'Cancellation is not supported for the current job status.',
-                    409,
-                    'CANCELLATION_NOT_ALLOWED_IN_CURRENT_STATUS',
-                    { current_status: job.current_status }
-                )
-            );
-        }
-
-        const validatedPayload = validateCancellationPayload(
+        const outcome = await applyLifecycleCancellationInTransaction({
+            job,
+            currentUser,
             payload,
-            participantRole,
-            job.current_status
-        );
-        if (!validatedPayload.valid) {
-            return rollbackWith(
-                transaction,
-                serviceError(validatedPayload.message, 400, 'VALIDATION_ERROR')
-            );
-        }
-
-        const invariant = await validateLateLifecycleInvariants(job, transaction);
-        if (invariant.error) return rollbackWith(transaction, invariant.error);
-
-        const requiresReview = validatedPayload.resolutionMode === 'ADMIN_REVIEW';
-        const awaitsCounterparty = validatedPayload.resolutionMode
-            === 'COUNTERPARTY_ACKNOWLEDGEMENT';
-        const distribution = requiresReview
-            ? null
-            : calculateCancellationDistribution({
-                depositAmount: invariant.depositAmount,
-                phase: job.current_status,
-                classification: validatedPayload.classification
-            });
-        if (distribution && !distribution.valid) {
-            return rollbackWith(
-                transaction,
-                serviceError(distribution.message, 409, 'CANCELLATION_POLICY_NOT_CONFIGURED')
-            );
-        }
-
-        const requestedAt = new Date();
-        const cancellation = await JobCancellation.create({
-            job_id: job.id,
-            acceptance_cycle: invariant.acceptanceCycle,
-            cancelled_by_user_id: currentUser.id,
-            cancelled_by_role: participantRole,
-            status_when_cancelled: job.current_status,
-            cancellation_action: 'LIFECYCLE_CANCEL',
-            reason_code: validatedPayload.reason,
-            reason_text: validatedPayload.reasonText,
-            classification: validatedPayload.classification,
-            resolution_mode: validatedPayload.resolutionMode,
-            status: requiresReview
-                ? 'REVIEW_REQUIRED'
-                : awaitsCounterparty
-                    ? 'AWAITING_COUNTERPARTY'
-                    : 'RESOLVED',
-            deposit_amount: invariant.depositAmount.toString(),
-            refund_amount: distribution?.customerAmount?.toString() ?? null,
-            handyman_compensation_amount: distribution?.handymanAmount?.toString() ?? null,
-            platform_amount: distribution?.platformAmount?.toString() ?? null,
-            penalty_amount: 0,
-            requested_at: requestedAt
-        }, { transaction });
-
-        let code;
-        let message;
-        if (!requiresReview && !awaitsCounterparty) {
-            const resolved = await resolveCancellationInTransaction({
-                job,
-                cancellation,
-                invariant,
-                distribution,
-                resolvedByUserId: currentUser.id,
-                resolutionNote: 'AUTO_POLICY',
-                transaction
-            });
-            if (resolved.error) return rollbackWith(transaction, resolved.error);
-            code = 'CANCELLATION_RESOLVED';
-            message = 'Job cancellation was resolved successfully.';
-            event = JOB_LIFECYCLE_EVENTS.CANCELLED;
-        } else {
-            await job.update({ current_status: 'CANCELLATION_REVIEW' }, { transaction });
-            await supersedePendingArrival(job, cancellation, transaction);
-            await JobStatusHistory.create({
-                job_id: job.id,
-                changed_by_user_id: currentUser.id,
-                old_status: cancellation.status_when_cancelled,
-                new_status: 'CANCELLATION_REVIEW',
-                reason: `LIFECYCLE_CANCELLATION_REQUESTED:${cancellation.id}`
-            }, { transaction });
-
-            if (requiresReview) {
-                code = 'CANCELLATION_REVIEW_REQUIRED';
-                message = 'Cancellation requires review. The deposit remains held.';
-                event = JOB_LIFECYCLE_EVENTS.CANCELLATION_REVIEW_REQUIRED;
-            } else {
-                code = 'CANCELLATION_AWAITING_COUNTERPARTY';
-                message = 'Cancellation is awaiting counterparty confirmation.';
-                event = JOB_LIFECYCLE_EVENTS.CANCELLATION_REQUESTED;
-            }
-        }
+            transaction
+        });
+        if (outcome.error) return rollbackWith(transaction, outcome.error);
 
         await transaction.commit();
-        emitCancellationEvent({ event, job, cancellation });
-        return {
-            EM: message,
-            EC: 0,
-            code,
-            DT: buildCancellationDto(cancellation)
-        };
+        if (outcome.event) {
+            emitCancellationEvent({
+                event: outcome.event,
+                job,
+                cancellation: outcome.cancellation
+            });
+        }
+        return outcome.result;
     } catch (error) {
         if (!transaction.finished) await transaction.rollback();
         console.error('[matchmaking] Failed to create lifecycle cancellation.', {
@@ -944,8 +984,10 @@ const rejectCancellationService = async (jobId, cancellationId, currentUser, pay
 };
 
 export {
+    applyLifecycleCancellationInTransaction,
     confirmCancellationService,
     createCancellationService,
+    emitCancellationEvent,
     getCurrentCancellationService,
     rejectCancellationService
 };

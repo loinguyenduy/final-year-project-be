@@ -26,7 +26,8 @@ const Transaction = db.define('Transaction', {
             'BONDING_DEPOSIT',
             'CANCELLATION_REFUND',
             'CANCELLATION_COMPENSATION',
-            'CANCELLATION_PLATFORM_FEE'
+            'CANCELLATION_PLATFORM_FEE',
+            'SERVICE_REMAINING_PAYMENT'
         ),
         allowNull: false 
     },
@@ -56,6 +57,18 @@ const Transaction = db.define('Transaction', {
         allowNull: true
     },
     cancellation_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    quote_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    acceptance_cycle: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    payer_user_id: {
         type: DataTypes.UUID,
         allowNull: true
     },
@@ -104,6 +117,16 @@ const Transaction = db.define('Transaction', {
         {
             name: 'transactions_cancellation_type',
             fields: ['cancellation_id', 'transaction_type']
+        },
+        {
+            name: 'transactions_one_successful_remaining_payment_per_quote',
+            unique: true,
+            fields: ['job_id', 'acceptance_cycle', 'quote_id'],
+            where: {
+                transaction_type: 'SERVICE_REMAINING_PAYMENT',
+                status: 'SUCCESS',
+                quote_id: { [Op.ne]: null }
+            }
         }
     ]
 });

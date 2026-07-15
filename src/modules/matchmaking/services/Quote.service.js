@@ -58,6 +58,11 @@ const buildQuoteDto = (quote, items = [], {
     variance_reason: quote.variance_reason,
     variance_reason_text: quote.variance_reason_text,
     submitted_at: quote.submitted_at,
+    customer_responded_at: quote.customer_responded_at,
+    accepted_at: quote.accepted_at,
+    rejected_at: quote.rejected_at,
+    rejection_reason: quote.rejection_reason,
+    rejection_reason_text: quote.rejection_reason_text,
     created_at: quote.createdAt,
     updated_at: quote.updatedAt,
     items: items.map(buildQuoteItemDto),
@@ -562,7 +567,8 @@ const getCurrentQuoteService = async (jobId, currentUser) => {
                 version: 1
             }
         });
-        if (!quote || (isCustomer && quote.status !== 'SUBMITTED')) {
+        const customerVisibleStatuses = ['SUBMITTED', 'ACCEPTED', 'REJECTED'];
+        if (!quote || (isCustomer && !customerVisibleStatuses.includes(quote.status))) {
             return serviceError('Quote not found.', 404, 'QUOTE_NOT_FOUND');
         }
         const contextError = validateQuoteContext(job, quote);
@@ -588,7 +594,9 @@ const getCurrentQuoteService = async (jobId, currentUser) => {
 export {
     buildQuoteDto,
     createOrGetQuoteDraftService,
+    findQuoteItems,
     getCurrentQuoteService,
     submitQuoteService,
-    updateQuoteDraftService
+    updateQuoteDraftService,
+    validateQuoteContext
 };

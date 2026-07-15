@@ -134,7 +134,9 @@ const ensureAcceptedAndHeld = (job) => {
             'EN_ROUTE',
             'ARRIVED',
             'QUOTE_PENDING',
-            'CANCELLATION_REVIEW'
+            'PAYMENT_PENDING',
+            'CANCELLATION_REVIEW',
+            'IN_PROGRESS'
         ].includes(job.current_status)) {
             return serviceError(
                 'Cancellation is not supported for the current job status.',

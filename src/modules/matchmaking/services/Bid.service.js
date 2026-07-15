@@ -292,7 +292,7 @@ const getMyBidsService = async (handymanId) => {
         });
 
         const unlockedStatuses = [
-            'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING',
+            'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING', 'PAYMENT_PENDING',
             'CANCELLATION_REVIEW', 'IN_PROGRESS', 'WARRANTY', 'CLOSED', 'CANCELLED'
         ];
         const safeBids = bids.map((bid) => {

@@ -219,6 +219,8 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
             && responseData.selected_handyman_id === requestingUser.id;
         const canSeeJobLocation = isAdmin || isOwnerCustomer
             || (isSelectedHandyman && contactIsUnlocked);
+        const canSeeHandymanRawGps = isAdmin || isSelectedHandyman;
+        const canSeeHandymanLocationMetadata = isAdmin || isOwnerCustomer || isSelectedHandyman;
         const canSeeCustomerContact = isAdmin || isOwnerCustomer
             || (isSelectedHandyman && contactIsUnlocked);
         const canSeeHandymanContact = isAdmin || isSelectedHandyman
@@ -242,6 +244,27 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                 responseData.Ward?.name,
                 responseData.Province?.name
             ].filter(Boolean).join(', ');
+        }
+
+        if (!canSeeHandymanRawGps) {
+            responseData.en_route_gps_lat = null;
+            responseData.en_route_gps_long = null;
+            const statusHistories = responseData.Job_Status_Histories
+                || responseData.JobStatusHistories
+                || [];
+            statusHistories.forEach((history) => {
+                if (history.new_status === 'EN_ROUTE') {
+                    history.trigger_gps_lat = null;
+                    history.trigger_gps_long = null;
+                }
+            });
+        }
+
+        if (!canSeeHandymanLocationMetadata) {
+            responseData.en_route_at = null;
+            responseData.en_route_gps_accuracy_meters = null;
+            responseData.en_route_distance_meters = null;
+            responseData.en_route_estimated_arrival_minutes = null;
         }
 
         if (responseData.Customer && !canSeeCustomerContact) {

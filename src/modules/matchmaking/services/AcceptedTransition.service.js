@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import Bid from '../models/Bid.model.js';
+import JobArrivalRequest from '../models/JobArrivalRequest.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 
 const assertTransitionInput = ({
@@ -74,6 +75,18 @@ const transitionJobToAccepted = async ({
   }
   const acceptanceCycle = previousAcceptanceCycle + 1;
 
+  await JobArrivalRequest.update(
+    {
+      status: 'SUPERSEDED',
+      responded_at: acceptedAt,
+      responded_by_user_id: null
+    },
+    {
+      where: { job_id: job.id, status: 'PENDING' },
+      transaction
+    }
+  );
+
   await selectedBid.update({ status: 'WON' }, { transaction });
   await Bid.update(
     { status: 'LOST' },
@@ -98,7 +111,15 @@ const transitionJobToAccepted = async ({
     current_status: 'ACCEPTED',
     accepted_at: acceptedAt,
     contact_unlocked_at: acceptedAt,
-    acceptance_cycle: acceptanceCycle
+    acceptance_cycle: acceptanceCycle,
+    en_route_at: null,
+    en_route_gps_lat: null,
+    en_route_gps_long: null,
+    en_route_gps_accuracy_meters: null,
+    en_route_distance_meters: null,
+    en_route_estimated_arrival_minutes: null,
+    arrived_at: null,
+    arrival_confirmed_by_user_id: null
   }, { transaction });
 
   await JobStatusHistory.create({

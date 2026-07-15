@@ -96,6 +96,7 @@ const getAvailableJobsForHandymanService = async (handymanId, {
         const jobs = await Job.findAll({
             where: { [Op.and]: andConditions },
             attributes: {
+                exclude: ['en_route_gps_lat', 'en_route_gps_long'],
                 include: [
                     [
                         db.literal(`(SELECT COUNT(*) FROM "Bids" WHERE "Bids"."job_id" = "Job"."id" AND "Bids"."status" = 'PENDING')`),

@@ -8,8 +8,23 @@ import User from '../../identity/models/User.model.js';
 import Bid from '../models/Bid.model.js';
 import Job from '../models/Job.model.js';
 import JobCancellation from '../models/JobCancellation.model.js';
+import JobArrivalRequest from '../models/JobArrivalRequest.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import Service from '../models/Service.model.js';
+import { parseCoordinatePair } from '../utils/location.util.js';
+import {
+    buildArrivalRequestDto,
+    buildDistanceSnapshot,
+    buildEnRouteDto,
+    calculateEstimatedArrivalMinutes,
+    getCooldownRemainingSeconds,
+    getJobLifecycleConfig,
+    validateGpsEvidence
+} from '../utils/jobLifecycle.util.js';
+import {
+    JOB_LIFECYCLE_EVENTS,
+    emitJobLifecycleEvent
+} from '../sockets/JobLifecycle.gateway.js';
 
 const serviceError = (EM, EC, code, DT = '') => ({ EM, EC, code, DT });
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -82,6 +97,27 @@ const getPartnerMetrics = async (userId, role, options = {}) => {
 };
 
 const validateAcceptedJobInvariants = async (job, options = {}) => {
+    const acceptanceCycle = Number(job?.acceptance_cycle);
+    if (!Number.isInteger(acceptanceCycle) || acceptanceCycle < 1) {
+        return {
+            error: serviceError(
+                'Job acceptance cycle is inconsistent.',
+                409,
+                'ACCEPTANCE_CYCLE_INCONSISTENT'
+            )
+        };
+    }
+
+    if (typeof job?.service_address !== 'string' || !job.service_address.trim()) {
+        return {
+            error: serviceError(
+                'Accepted job service address is missing.',
+                409,
+                'ACCEPTED_DATA_INCONSISTENT'
+            )
+        };
+    }
+
     if (!job.selected_bid_id
         || !job.selected_handyman_id
         || !job.deposit_transaction_id
@@ -161,6 +197,34 @@ const validateAcceptedJobInvariants = async (job, options = {}) => {
     };
 };
 
+const buildAllowedActions = ({
+    job,
+    isCustomer,
+    isSelectedHandyman,
+    isAdmin,
+    pendingRequest,
+    reviewRequired,
+    retryAfterSeconds
+}) => {
+    if (isAdmin) return [];
+    if (job.current_status === 'ACCEPTED') {
+        if (isCustomer) return ['REOPEN_BIDDING', 'CANCEL_JOB'];
+        if (isSelectedHandyman) return ['START_MOVING', 'CANCEL_ACCEPTED_JOB'];
+        return [];
+    }
+    if (job.current_status !== 'EN_ROUTE') return [];
+
+    if (pendingRequest) {
+        return isCustomer
+            ? ['CONFIRM_ARRIVAL', 'REJECT_ARRIVAL']
+            : ['WAIT_ARRIVAL_CONFIRMATION'];
+    }
+    if (!isSelectedHandyman) return [];
+    if (reviewRequired) return ['WAIT_ARRIVAL_REVIEW'];
+    if (retryAfterSeconds > 0) return ['WAIT_ARRIVAL_COOLDOWN'];
+    return ['REQUEST_ARRIVAL'];
+};
+
 const getAcceptedDetailsService = async (jobId, currentUser) => {
     if (!isValidUuid(jobId)) {
         return serviceError('Invalid job id.', 400, 'VALIDATION_ERROR');
@@ -175,11 +239,12 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             return serviceError('Job not found.', 404, 'JOB_NOT_FOUND');
         }
 
+        const isAdmin = currentUser.role === 'ADMIN';
         const isCustomer = currentUser.role === 'CUSTOMER' && job.customer_id === currentUser.id;
         const isSelectedHandyman = currentUser.role === 'HANDYMAN'
             && job.selected_handyman_id === currentUser.id;
 
-        if (!isCustomer && !isSelectedHandyman) {
+        if (!isAdmin && !isCustomer && !isSelectedHandyman) {
             return serviceError(
                 'You do not have permission to view this accepted job.',
                 403,
@@ -187,9 +252,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             );
         }
 
-        if (job.current_status !== 'ACCEPTED') {
+        if (!['ACCEPTED', 'EN_ROUTE', 'ARRIVED'].includes(job.current_status)) {
             return serviceError(
-                'Job is not in ACCEPTED status.',
+                'Job is not in an accepted lifecycle status.',
                 409,
                 'INVALID_JOB_STATUS',
                 { current_status: job.current_status }
@@ -200,32 +265,72 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
         if (validation.error) return validation.error;
 
         const { selectedBid, customer, selectedHandyman } = validation;
-        const partnerUser = isCustomer ? selectedHandyman : customer;
-        const partnerRole = isCustomer ? 'HANDYMAN' : 'CUSTOMER';
-        const partnerMetrics = await getPartnerMetrics(partnerUser.id, partnerRole);
+        let partner = null;
+        if (!isAdmin) {
+            const partnerUser = isCustomer ? selectedHandyman : customer;
+            const partnerRole = isCustomer ? 'HANDYMAN' : 'CUSTOMER';
+            const partnerMetrics = await getPartnerMetrics(partnerUser.id, partnerRole);
 
-        let partner = {
-            role: partnerRole,
-            id: partnerUser.id,
-            full_name: partnerUser.full_name,
-            avatar_url: partnerUser.avatar_url,
-            phone_number: partnerUser.phone_number,
-            ...partnerMetrics
-        };
-
-        if (partnerRole === 'HANDYMAN') {
-            const profile = await HandymanProfile.findOne({
-                where: { user_id: partnerUser.id },
-                attributes: ['total_jobs_completed']
-            });
             partner = {
-                ...partner,
-                total_jobs_completed: profile?.total_jobs_completed || 0,
-                kyc_status: partnerUser.kyc_status
+                role: partnerRole,
+                id: partnerUser.id,
+                full_name: partnerUser.full_name,
+                avatar_url: partnerUser.avatar_url,
+                phone_number: partnerUser.phone_number,
+                ...partnerMetrics
             };
+
+            if (partnerRole === 'HANDYMAN') {
+                const profile = await HandymanProfile.findOne({
+                    where: { user_id: partnerUser.id },
+                    attributes: ['total_jobs_completed']
+                });
+                partner = {
+                    ...partner,
+                    total_jobs_completed: profile?.total_jobs_completed || 0,
+                    kyc_status: partnerUser.kyc_status
+                };
+            }
         }
 
-        const deposit = isCustomer
+        const lifecycleConfig = getJobLifecycleConfig();
+        const [latestArrivalRequest, rejectionCount, latestRejectedRequest] = await Promise.all([
+            JobArrivalRequest.findOne({
+                where: { job_id: job.id, acceptance_cycle: job.acceptance_cycle },
+                order: [['requested_at', 'DESC'], ['createdAt', 'DESC']]
+            }),
+            JobArrivalRequest.count({
+                where: {
+                    job_id: job.id,
+                    acceptance_cycle: job.acceptance_cycle,
+                    status: 'REJECTED'
+                }
+            }),
+            JobArrivalRequest.findOne({
+                where: {
+                    job_id: job.id,
+                    acceptance_cycle: job.acceptance_cycle,
+                    status: 'REJECTED'
+                },
+                order: [['responded_at', 'DESC'], ['updatedAt', 'DESC']]
+            })
+        ]);
+        const pendingRequest = latestArrivalRequest?.status === 'PENDING'
+            ? latestArrivalRequest
+            : null;
+        const reviewRequired = rejectionCount >= lifecycleConfig.maxRejectionsPerCycle;
+        const retryAfterSeconds = job.current_status !== 'EN_ROUTE'
+            || pendingRequest
+            || reviewRequired
+            ? 0
+            : getCooldownRemainingSeconds(
+                latestRejectedRequest?.responded_at,
+                new Date(),
+                lifecycleConfig.arrivalCooldownSeconds
+            );
+        const canSeeHandymanRawGps = isAdmin || isSelectedHandyman;
+
+        const deposit = (isCustomer || isAdmin)
             ? {
                 amount: toNumber(job.deposit_amount),
                 percentage: 10,
@@ -255,7 +360,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     service_address: job.service_address,
                     gps_lat: job.gps_lat == null ? null : Number(job.gps_lat),
                     gps_long: job.gps_long == null ? null : Number(job.gps_long),
-                    accepted_at: job.accepted_at
+                    accepted_at: job.accepted_at,
+                    acceptance_cycle: Number(job.acceptance_cycle),
+                    arrived_at: job.arrived_at
                 },
                 selected_bid: {
                     id: selectedBid.id,
@@ -265,58 +372,55 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                 },
                 deposit,
                 partner,
-                allowed_actions: isCustomer
-                    ? ['REOPEN_BIDDING', 'CANCEL_JOB']
-                    : ['START_MOVING', 'CANCEL_ACCEPTED_JOB']
+                participants: isAdmin
+                    ? {
+                        customer: {
+                            id: customer.id,
+                            full_name: customer.full_name,
+                            role: customer.role,
+                            is_active: customer.is_active
+                        },
+                        handyman: {
+                            id: selectedHandyman.id,
+                            full_name: selectedHandyman.full_name,
+                            role: selectedHandyman.role,
+                            is_active: selectedHandyman.is_active
+                        }
+                    }
+                    : undefined,
+                en_route: buildEnRouteDto(job, { includeRawGps: canSeeHandymanRawGps }),
+                arrival_request: buildArrivalRequestDto(latestArrivalRequest, {
+                    includeRawGps: canSeeHandymanRawGps
+                }),
+                arrival_policy: {
+                    rejection_count: rejectionCount,
+                    max_rejections: lifecycleConfig.maxRejectionsPerCycle,
+                    review_required: reviewRequired,
+                    retry_after_seconds: retryAfterSeconds || null
+                },
+                allowed_actions: buildAllowedActions({
+                    job,
+                    isCustomer,
+                    isSelectedHandyman,
+                    isAdmin,
+                    pendingRequest,
+                    reviewRequired,
+                    retryAfterSeconds
+                })
             }
         };
     } catch (error) {
-        console.error('>>> Error in getAcceptedDetailsService:', error);
+        console.error('>>> Error in getAcceptedDetailsService:', error?.message || 'Unknown error');
         return serviceError('Unable to retrieve accepted job details.', 500, 'INTERNAL_SERVER_ERROR');
     }
 };
 
 const validateMovingPayload = (payload = {}) => {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        return serviceError('Request body must be a JSON object.', 400, 'VALIDATION_ERROR');
+    const validation = validateGpsEvidence(payload);
+    if (!validation.valid) {
+        return serviceError(validation.error, 400, 'INVALID_COORDINATES');
     }
-
-    const unknownFields = Object.keys(payload).filter(
-        (field) => !['gps_lat', 'gps_long'].includes(field)
-    );
-    if (unknownFields.length > 0) {
-        return serviceError(
-            `Unsupported request fields: ${unknownFields.join(', ')}.`,
-            400,
-            'VALIDATION_ERROR'
-        );
-    }
-
-    const hasLat = Object.prototype.hasOwnProperty.call(payload, 'gps_lat');
-    const hasLong = Object.prototype.hasOwnProperty.call(payload, 'gps_long');
-
-    if (hasLat !== hasLong) {
-        return serviceError(
-            'gps_lat and gps_long must be provided together.',
-            400,
-            'VALIDATION_ERROR'
-        );
-    }
-
-    if (!hasLat) return { gps_lat: null, gps_long: null };
-
-    const gpsLat = Number(payload.gps_lat);
-    const gpsLong = Number(payload.gps_long);
-    if (!Number.isFinite(gpsLat)
-        || !Number.isFinite(gpsLong)
-        || gpsLat < -90
-        || gpsLat > 90
-        || gpsLong < -180
-        || gpsLong > 180) {
-        return serviceError('Invalid GPS coordinates.', 400, 'VALIDATION_ERROR');
-    }
-
-    return { gps_lat: gpsLat, gps_long: gpsLong };
+    return validation;
 };
 
 const startMovingService = async (jobId, handymanId, payload = {}) => {
@@ -324,8 +428,8 @@ const startMovingService = async (jobId, handymanId, payload = {}) => {
         return serviceError('Invalid job id.', 400, 'VALIDATION_ERROR');
     }
 
-    const coordinates = validateMovingPayload(payload);
-    if (coordinates.EC) return coordinates;
+    const handymanCoordinates = validateMovingPayload(payload);
+    if (handymanCoordinates.EC) return handymanCoordinates;
 
     const transaction = await db.transaction();
     try {
@@ -339,13 +443,38 @@ const startMovingService = async (jobId, handymanId, payload = {}) => {
             return serviceError('Job not found.', 404, 'JOB_NOT_FOUND');
         }
 
-        if (job.current_status === 'EN_ROUTE' && job.selected_handyman_id === handymanId) {
+        if (job.selected_handyman_id !== handymanId) {
             await transaction.rollback();
             return serviceError(
-                'Handyman has already started moving for this job.',
-                409,
-                'JOB_ALREADY_EN_ROUTE'
+                'Only the selected handyman can start moving for this job.',
+                403,
+                'FORBIDDEN_JOB_ACCESS'
             );
+        }
+
+        const acceptanceCycle = Number(job.acceptance_cycle);
+        if (!Number.isInteger(acceptanceCycle) || acceptanceCycle < 1) {
+            await transaction.rollback();
+            return serviceError(
+                'Job acceptance cycle is inconsistent.',
+                409,
+                'ACCEPTANCE_CYCLE_INCONSISTENT'
+            );
+        }
+
+        if (job.current_status === 'EN_ROUTE') {
+            await transaction.rollback();
+            return {
+                EM: 'Handyman has already started moving for this job.',
+                EC: 0,
+                code: 'EN_ROUTE_ALREADY_STARTED',
+                DT: {
+                    job_id: job.id,
+                    acceptance_cycle: Number(job.acceptance_cycle),
+                    status: job.current_status,
+                    en_route: buildEnRouteDto(job, { includeRawGps: true })
+                }
+            };
         }
 
         if (job.current_status !== 'ACCEPTED') {
@@ -355,15 +484,6 @@ const startMovingService = async (jobId, handymanId, payload = {}) => {
                 409,
                 'INVALID_JOB_STATUS',
                 { current_status: job.current_status }
-            );
-        }
-
-        if (job.selected_handyman_id !== handymanId) {
-            await transaction.rollback();
-            return serviceError(
-                'Only the selected handyman can start moving for this job.',
-                403,
-                'FORBIDDEN_JOB_ACCESS'
             );
         }
 
@@ -382,10 +502,42 @@ const startMovingService = async (jobId, handymanId, payload = {}) => {
             );
         }
 
+        const jobCoordinates = parseCoordinatePair(job.gps_lat, job.gps_long);
+        if (!jobCoordinates.valid) {
+            await transaction.rollback();
+            return serviceError(
+                'Job location data is inconsistent.',
+                409,
+                'ACCEPTED_DATA_INCONSISTENT'
+            );
+        }
+        if (jobCoordinates.hasCoordinates && !handymanCoordinates.hasCoordinates) {
+            await transaction.rollback();
+            return serviceError(
+                'Handyman GPS is required because this job has coordinates.',
+                400,
+                'HANDYMAN_LOCATION_REQUIRED'
+            );
+        }
+
+        const lifecycleConfig = getJobLifecycleConfig();
+        const distance = buildDistanceSnapshot({
+            handymanCoordinates,
+            jobCoordinates
+        });
+        const estimatedArrivalMinutes = calculateEstimatedArrivalMinutes(
+            distance.distanceMeters,
+            lifecycleConfig
+        );
         const enRouteAt = new Date();
         await job.update({
             current_status: 'EN_ROUTE',
-            en_route_at: enRouteAt
+            en_route_at: enRouteAt,
+            en_route_gps_lat: handymanCoordinates.latitude,
+            en_route_gps_long: handymanCoordinates.longitude,
+            en_route_gps_accuracy_meters: handymanCoordinates.accuracyMeters,
+            en_route_distance_meters: distance.distanceMeters,
+            en_route_estimated_arrival_minutes: estimatedArrivalMinutes
         }, { transaction });
 
         await JobStatusHistory.create({
@@ -394,23 +546,39 @@ const startMovingService = async (jobId, handymanId, payload = {}) => {
             old_status: 'ACCEPTED',
             new_status: 'EN_ROUTE',
             reason: 'HANDYMAN_STARTED_MOVING',
-            trigger_gps_lat: coordinates.gps_lat,
-            trigger_gps_long: coordinates.gps_long
+            trigger_gps_lat: handymanCoordinates.latitude,
+            trigger_gps_long: handymanCoordinates.longitude
         }, { transaction });
 
         await transaction.commit();
+        const eventPayload = {
+            job_id: job.id,
+            acceptance_cycle: Number(job.acceptance_cycle),
+            status: 'EN_ROUTE',
+            started_at: enRouteAt,
+            distance_meters: distance.distanceMeters,
+            distance_km: distance.distanceKm,
+            estimated_arrival_minutes: estimatedArrivalMinutes
+        };
+        emitJobLifecycleEvent({
+            event: JOB_LIFECYCLE_EVENTS.EN_ROUTE,
+            userIds: [job.customer_id],
+            payload: eventPayload
+        });
         return {
             EM: 'Handyman started moving.',
             EC: 0,
+            code: 'EN_ROUTE_STARTED',
             DT: {
                 job_id: job.id,
+                acceptance_cycle: Number(job.acceptance_cycle),
                 status: 'EN_ROUTE',
-                en_route_at: enRouteAt
+                en_route: buildEnRouteDto(job, { includeRawGps: true })
             }
         };
     } catch (error) {
         if (!transaction.finished) await transaction.rollback();
-        console.error('>>> Error in startMovingService:', error);
+        console.error('>>> Error in startMovingService:', error?.message || 'Unknown error');
         return serviceError('Unable to start moving.', 500, 'INTERNAL_SERVER_ERROR');
     }
 };

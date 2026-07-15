@@ -12,6 +12,10 @@ import { consumeMessageToken } from '../utils/chatRateLimiter.util.js';
 import { isPlainObject, isValidUuid } from '../utils/chatValidation.util.js';
 import { registerChatIo } from './chat.gateway.js';
 import { authenticateSocket } from './socketAuth.middleware.js';
+import {
+  getUserRoom,
+  registerRealtimeIo
+} from '../../../core/realtime/realtime.gateway.js';
 
 const emitProtocolError = (socket, envelope) => socket.emit(CHAT_EVENTS.ERROR, envelope);
 
@@ -196,6 +200,7 @@ const initializeChatSocket = (httpServer) => {
 
   io.use(authenticateSocket);
   io.on('connection', (socket) => {
+    socket.join(getUserRoom(socket.data.user.id));
     console.info('[chat] Socket connected.', {
       socket_id: socket.id,
       user_id: socket.data.user.id
@@ -211,6 +216,7 @@ const initializeChatSocket = (httpServer) => {
   });
 
   registerChatIo(io);
+  registerRealtimeIo(io);
   return io;
 };
 

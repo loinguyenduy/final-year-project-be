@@ -130,6 +130,14 @@ const reopenEligibleLostBids = async (jobId, selectedBidId, transaction) => {
 
 const ensureAcceptedAndHeld = (job) => {
     if (job.current_status !== 'ACCEPTED') {
+        if (['EN_ROUTE', 'ARRIVED'].includes(job.current_status)) {
+            return serviceError(
+                'Cancellation is not supported for the current job status.',
+                409,
+                'CANCELLATION_NOT_ALLOWED_IN_CURRENT_STATUS',
+                { current_status: job.current_status }
+            );
+        }
         if (job.deposit_status === 'REFUNDED') {
             return serviceError(
                 'This job deposit has already been refunded.',

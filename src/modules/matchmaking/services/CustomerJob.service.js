@@ -190,6 +190,9 @@ const getCustomerJobsService = async (userId) => {
     try {
         const jobs = await Job.findAll({
             where: { customer_id: userId },
+            attributes: {
+                exclude: ['en_route_gps_lat', 'en_route_gps_long']
+            },
             include: [
                 {
                     model: Service,

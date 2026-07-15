@@ -22,6 +22,11 @@ import {
     handleCancelByCustomer,
     handleCancelByHandyman
 } from '../controllers/AcceptedCancellation.controller.js';
+import {
+    handleConfirmArrival,
+    handleRejectArrival,
+    handleRequestArrival
+} from '../controllers/Arrival.controller.js';
 
 const router = express.Router();
 
@@ -55,7 +60,7 @@ router.post('/bids/compare', checkUserJWT, checkUserRole(['CUSTOMER']), handleCo
 router.get(
     '/jobs/:id/accepted-details',
     checkUserJWT,
-    checkUserRole(['CUSTOMER', 'HANDYMAN']),
+    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
     handleGetAcceptedDetails
 );
 router.post(
@@ -75,6 +80,24 @@ router.post(
     checkUserJWT,
     checkUserRole(['HANDYMAN']),
     handleStartMoving
+);
+router.post(
+    '/jobs/:id/arrival-requests',
+    checkUserJWT,
+    checkUserRole(['HANDYMAN']),
+    handleRequestArrival
+);
+router.post(
+    '/jobs/:id/arrival-requests/:requestId/confirm',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handleConfirmArrival
+);
+router.post(
+    '/jobs/:id/arrival-requests/:requestId/reject',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handleRejectArrival
 );
 
 // COMMON JOB — must come after /jobs/available to avoid param collision

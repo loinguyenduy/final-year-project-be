@@ -15,6 +15,13 @@ const Job = db.define('Job', {
     deposit_paid_at: { type: DataTypes.DATE, allowNull: true },
     accepted_at: { type: DataTypes.DATE, allowNull: true },
     en_route_at: { type: DataTypes.DATE, allowNull: true },
+    en_route_gps_lat: { type: DataTypes.DECIMAL(10, 8), allowNull: true },
+    en_route_gps_long: { type: DataTypes.DECIMAL(11, 8), allowNull: true },
+    en_route_gps_accuracy_meters: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+    en_route_distance_meters: { type: DataTypes.INTEGER, allowNull: true },
+    en_route_estimated_arrival_minutes: { type: DataTypes.INTEGER, allowNull: true },
+    arrived_at: { type: DataTypes.DATE, allowNull: true },
+    arrival_confirmed_by_user_id: { type: DataTypes.UUID, allowNull: true },
     cancelled_at: { type: DataTypes.DATE, allowNull: true },
     contact_unlocked_at: { type: DataTypes.DATE, allowNull: true },
     acceptance_cycle: {

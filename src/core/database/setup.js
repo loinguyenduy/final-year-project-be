@@ -15,6 +15,7 @@ import Job from '../../modules/matchmaking/models/Job.model.js';
 import Bid from '../../modules/matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../modules/matchmaking/models/JobStatusHistory.model.js';
 import JobCancellation from '../../modules/matchmaking/models/JobCancellation.model.js';
+import JobArrivalRequest from '../../modules/matchmaking/models/JobArrivalRequest.model.js';
 import HandymanService from '../../modules/matchmaking/models/HandymanService.model.js';
 import HandymanServiceArea from '../../modules/matchmaking/models/HandymanServiceArea.model.js';
 
@@ -110,6 +111,21 @@ JobCancellation.belongsTo(Job, { foreignKey: 'job_id' });
 User.hasMany(JobCancellation, { foreignKey: 'cancelled_by_user_id' });
 JobCancellation.belongsTo(User, { as: 'CancelledByUser', foreignKey: 'cancelled_by_user_id' });
 
+Job.hasMany(JobArrivalRequest, { as: 'ArrivalRequests', foreignKey: 'job_id' });
+JobArrivalRequest.belongsTo(Job, { foreignKey: 'job_id' });
+
+User.hasMany(JobArrivalRequest, { as: 'CustomerArrivalRequests', foreignKey: 'customer_id' });
+JobArrivalRequest.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+
+User.hasMany(JobArrivalRequest, { as: 'HandymanArrivalRequests', foreignKey: 'handyman_id' });
+JobArrivalRequest.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+
+User.hasMany(JobArrivalRequest, { as: 'RespondedArrivalRequests', foreignKey: 'responded_by_user_id' });
+JobArrivalRequest.belongsTo(User, { as: 'RespondedBy', foreignKey: 'responded_by_user_id' });
+
+User.hasMany(Job, { as: 'ArrivalConfirmedJobs', foreignKey: 'arrival_confirmed_by_user_id' });
+Job.belongsTo(User, { as: 'ArrivalConfirmedBy', foreignKey: 'arrival_confirmed_by_user_id' });
+
 // E. CHAT
 Job.hasMany(Conversation, { as: 'ChatConversations', foreignKey: 'job_id' });
 Conversation.belongsTo(Job, { foreignKey: 'job_id' });
@@ -198,7 +214,7 @@ const verifyChatIndexes = async () => {
     }
 };
 
-const reportChatIndexSyncFailure = (error) => {
+const reportIndexSyncFailure = (error) => {
     const errorText = [
         error?.message,
         error?.original?.message,
@@ -219,6 +235,35 @@ const reportChatIndexSyncFailure = (error) => {
             + 'conversations_job_acceptance_cycle_unique. The application will not start without it.'
         );
     }
+    if (errorText.includes('job_arrival_requests_one_pending_per_cycle')) {
+        console.error(
+            '[matchmaking] ERROR: DB_SYNC_ALTER could not create the mandatory partial unique index '
+            + 'job_arrival_requests_one_pending_per_cycle. Resolve any duplicate PENDING arrival '
+            + 'requests for the same job/cycle before starting the application.'
+        );
+    }
+};
+
+const verifyArrivalRequestIndexes = async () => {
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Job_Arrival_Requests'
+          AND indexname = 'job_arrival_requests_one_pending_per_cycle'
+    `);
+    const indexDefinition = String(indexes[0]?.indexdef || '');
+    if (!indexDefinition.includes('UNIQUE')
+        || !indexDefinition.includes('job_id')
+        || !indexDefinition.includes('acceptance_cycle')
+        || !indexDefinition.includes('WHERE')
+        || !indexDefinition.includes('PENDING')) {
+        throw new Error(
+            'Required partial unique index job_arrival_requests_one_pending_per_cycle is missing. '
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    console.log('Arrival request indexes verified successfully.');
 };
 
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
@@ -238,7 +283,7 @@ const initDatabase = async () => {
             try {
                 await db.sync({ alter: true });
             } catch (error) {
-                reportChatIndexSyncFailure(error);
+                reportIndexSyncFailure(error);
                 throw error;
             }
             console.log('All models were synchronized successfully with alter mode.');
@@ -246,6 +291,7 @@ const initDatabase = async () => {
             console.log('Automatic schema alteration is disabled.');
         }
         await verifyChatIndexes();
+        await verifyArrivalRequestIndexes();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

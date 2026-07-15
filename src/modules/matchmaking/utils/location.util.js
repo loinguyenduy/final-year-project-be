@@ -135,21 +135,32 @@ const coordinatesMatch = (latitudeA, longitudeA, latitudeB, longitudeB, toleranc
         && Math.abs(first.longitude - second.longitude) <= tolerance;
 };
 
-// Haversine formula — returns distance in kilometres.
-const calculateDistanceKm = (latitudeA, longitudeA, latitudeB, longitudeB) => {
+const calculateRawDistanceKm = (latitudeA, longitudeA, latitudeB, longitudeB) => {
     const R = 6371;
     const toRad = value => (value * Math.PI) / 180;
     const dLat = toRad(latitudeB - latitudeA);
     const dLon = toRad(longitudeB - longitudeA);
     const a = Math.sin(dLat / 2) ** 2
         + Math.cos(toRad(latitudeA)) * Math.cos(toRad(latitudeB)) * Math.sin(dLon / 2) ** 2;
-    return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
+    const normalizedA = Math.min(1, Math.max(0, a));
+    return R * 2 * Math.atan2(Math.sqrt(normalizedA), Math.sqrt(1 - normalizedA));
 };
+
+// Haversine distance rounded to the nearest metre for lifecycle audit snapshots.
+const calculateDistanceMeters = (latitudeA, longitudeA, latitudeB, longitudeB) => (
+    Math.round(calculateRawDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB) * 1000)
+);
+
+// Existing public behaviour: distance in kilometres rounded to two decimals.
+const calculateDistanceKm = (latitudeA, longitudeA, latitudeB, longitudeB) => (
+    parseFloat(calculateRawDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB).toFixed(2))
+);
 
 export {
     LOCATION_SOURCES,
     parseCoordinatePair,
     validateJobLocationInput,
     coordinatesMatch,
+    calculateDistanceMeters,
     calculateDistanceKm
 };

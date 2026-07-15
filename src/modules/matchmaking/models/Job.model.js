@@ -31,6 +31,18 @@ const Job = db.define('Job', {
     service_address: { type: DataTypes.TEXT, allowNull: false }, 
     gps_lat: { type: DataTypes.DECIMAL(10, 8) },
     gps_long: { type: DataTypes.DECIMAL(11, 8) },
+    location_source: {
+        type: DataTypes.ENUM(
+            'CURRENT_GPS',
+            'GEOCODED_ADDRESS',
+            'PROFILE_ADDRESS',
+            'MANUAL_MAP_PIN',
+            'ADDRESS_ONLY'
+        ),
+        allowNull: true
+    },
+    location_confirmed: { type: DataTypes.BOOLEAN, allowNull: true },
+    location_confirmed_at: { type: DataTypes.DATE, allowNull: true },
     scheduled_at: { type: DataTypes.DATE, allowNull: true },
     images: { type: DataTypes.JSON, defaultValue: [] },
     current_status: { 

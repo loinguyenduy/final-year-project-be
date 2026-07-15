@@ -1,14 +1,19 @@
 import { getAvailableJobsForHandymanService } from '../services/HandymanJob.service.js';
+import { parseCoordinatePair } from '../utils/location.util.js';
 
 const handleGetAvailableJobs = async (req, res) => {
     try {
         const handymanId = req.user.id;
         const { search, service_id, current_lat, current_long, sort_by } = req.query;
+        const coordinates = parseCoordinatePair(current_lat, current_long);
+        if (!coordinates.valid) {
+            return res.status(400).json({ EM: coordinates.error, EC: 400, DT: '' });
+        }
         const result = await getAvailableJobsForHandymanService(handymanId, {
             search: search ?? '',
             service_id: service_id ?? '',
-            current_lat: current_lat ? parseFloat(current_lat) : null,
-            current_long: current_long ? parseFloat(current_long) : null,
+            current_lat: coordinates.latitude,
+            current_long: coordinates.longitude,
             sort_by: sort_by ?? ''
         });
         return res.status(result.EC === 0 ? 200 : 500).json({

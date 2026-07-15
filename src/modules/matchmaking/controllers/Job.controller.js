@@ -1,4 +1,5 @@
 import { getServicesCategoryService, getJobDetailsByIdService } from "../services/Job.service.js";
+import { parseCoordinatePair } from '../utils/location.util.js';
 
 const handleGetServices = async (req, res) => {
     try {
@@ -23,7 +24,14 @@ const handleGetJobDetails = async (req, res) => {
         const jobId = req.params.id;
         const requestingUser = req.user ? { id: req.user.id, role: req.user.role } : null;
         const { current_lat, current_long } = req.query;
-        const result = await getJobDetailsByIdService(jobId, requestingUser, { current_lat, current_long });
+        const coordinates = parseCoordinatePair(current_lat, current_long);
+        if (!coordinates.valid) {
+            return res.status(400).json({ EM: coordinates.error, EC: 400, DT: '' });
+        }
+        const result = await getJobDetailsByIdService(jobId, requestingUser, {
+            current_lat: coordinates.latitude,
+            current_long: coordinates.longitude
+        });
         const status = result.EC === 0
             ? 200
             : ([403, 404].includes(result.EC) ? result.EC : 500);

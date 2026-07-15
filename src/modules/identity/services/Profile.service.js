@@ -42,7 +42,10 @@ const getDetailedProfileService = async (userId) => {
                 },
                 {
                     model: UserAddress,
-                    attributes: ['id', 'province_code', 'ward_code', 'detail_address', 'full_address', 'is_default'],
+                    attributes: [
+                        'id', 'province_code', 'ward_code', 'detail_address',
+                        'full_address', 'gps_lat', 'gps_long', 'is_default'
+                    ],
                     include: [
                         { model: Province, attributes: ['province_code', 'name', 'short_name'] },
                         { model: Ward, attributes: ['ward_code', 'name'] }
@@ -103,7 +106,14 @@ const updateUserAddressService = async (userId, { province_code, ward_code, deta
 
         let result;
         if (existing) {
-            await existing.update({ province_code, ward_code, detail_address, full_address });
+            await existing.update({
+                province_code,
+                ward_code,
+                detail_address,
+                full_address,
+                gps_lat: null,
+                gps_long: null
+            });
             result = existing;
         } else {
             result = await UserAddress.create({

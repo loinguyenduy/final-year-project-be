@@ -9,17 +9,7 @@ import User from '../../identity/models/User.model.js';
 import Bid from '../models/Bid.model.js';
 import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
-
-// Haversine formula — returns distance in km
-const haversine = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const toRad = x => (x * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) ** 2
-        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-    return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
-};
+import { calculateDistanceKm } from '../utils/location.util.js';
 
 // Work time check in Vietnam timezone (UTC+7)
 // Returns true if the job's scheduled time falls in any of the handyman's preferred slots.
@@ -153,7 +143,12 @@ const getAvailableJobsForHandymanService = async (handymanId, {
 
                 // Distance
                 if (current_lat != null && current_long != null && data.gps_lat != null && data.gps_long != null) {
-                    data.distance_km = haversine(current_lat, current_long, parseFloat(data.gps_lat), parseFloat(data.gps_long));
+                    data.distance_km = calculateDistanceKm(
+                        current_lat,
+                        current_long,
+                        parseFloat(data.gps_lat),
+                        parseFloat(data.gps_long)
+                    );
                 } else {
                     data.distance_km = null;
                 }
@@ -163,6 +158,9 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                     data.detail_address = null;
                     data.gps_lat = null;
                     data.gps_long = null;
+                    data.location_source = null;
+                    data.location_confirmed = null;
+                    data.location_confirmed_at = null;
                     const wardName = data.Ward?.name ?? '';
                     const provinceName = data.Province?.name ?? '';
                     data.service_address = [wardName, provinceName].filter(Boolean).join(', ');
@@ -187,10 +185,13 @@ const getAvailableJobsForHandymanService = async (handymanId, {
         processed.sort((a, b) => {
             switch (effectiveSortBy) {
                 case 'distance':
-                    if (a.distance_km === null && b.distance_km === null) return 0;
+                    if (a.distance_km === null && b.distance_km === null) {
+                        return new Date(b.createdAt) - new Date(a.createdAt);
+                    }
                     if (a.distance_km === null) return 1;
                     if (b.distance_km === null) return -1;
-                    return a.distance_km - b.distance_km;
+                    return (a.distance_km - b.distance_km)
+                        || (new Date(b.createdAt) - new Date(a.createdAt));
                 case 'budget_desc':
                     return (parseFloat(b.estimated_budget_max) || 0) - (parseFloat(a.estimated_budget_max) || 0);
                 case 'budget_asc':

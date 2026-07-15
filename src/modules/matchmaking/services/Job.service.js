@@ -10,16 +10,7 @@ import Province from '../models/Province.model.js';
 import Ward from '../models/Ward.model.js';
 import db from '../../../core/database/connection.js';
 import { buildMatchResultsForBids } from './CustomerHandymanSelection.service.js';
-
-const haversine = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const toRad = x => (x * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) ** 2
-        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-    return parseFloat((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
-};
+import { calculateDistanceKm } from '../utils/location.util.js';
 
 const getServicesCategoryService = async () => {
     try {
@@ -207,7 +198,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
 
             // Distance from handyman's current location to job site
             if (current_lat != null && current_long != null && responseData.gps_lat != null && responseData.gps_long != null) {
-                responseData.distance_km = haversine(
+                responseData.distance_km = calculateDistanceKm(
                     parseFloat(current_lat),
                     parseFloat(current_long),
                     parseFloat(responseData.gps_lat),
@@ -237,6 +228,16 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
             responseData.detail_address = null;
             responseData.gps_lat = null;
             responseData.gps_long = null;
+            responseData.location_source = null;
+            responseData.location_confirmed = null;
+            responseData.location_confirmed_at = null;
+            const statusHistories = responseData.Job_Status_Histories
+                || responseData.JobStatusHistories
+                || [];
+            statusHistories.forEach((history) => {
+                history.trigger_gps_lat = null;
+                history.trigger_gps_long = null;
+            });
             responseData.service_address = [
                 responseData.Ward?.name,
                 responseData.Province?.name

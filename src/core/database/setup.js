@@ -132,6 +132,18 @@ JobCancellation.belongsTo(Job, { foreignKey: 'job_id' });
 User.hasMany(JobCancellation, { foreignKey: 'cancelled_by_user_id' });
 JobCancellation.belongsTo(User, { as: 'CancelledByUser', foreignKey: 'cancelled_by_user_id' });
 
+User.hasMany(JobCancellation, {
+    as: 'CounterpartyRespondedCancellations',
+    foreignKey: 'counterparty_responded_by_user_id'
+});
+JobCancellation.belongsTo(User, {
+    as: 'CounterpartyRespondedBy',
+    foreignKey: 'counterparty_responded_by_user_id'
+});
+
+User.hasMany(JobCancellation, { as: 'ResolvedCancellations', foreignKey: 'resolved_by_user_id' });
+JobCancellation.belongsTo(User, { as: 'ResolvedBy', foreignKey: 'resolved_by_user_id' });
+
 Job.hasMany(JobArrivalRequest, { as: 'ArrivalRequests', foreignKey: 'job_id' });
 JobArrivalRequest.belongsTo(Job, { foreignKey: 'job_id' });
 
@@ -187,6 +199,36 @@ Job.belongsTo(Transaction, { as: 'DepositTransaction', foreignKey: 'deposit_tran
 
 Transaction.hasMany(Transaction, { as: 'RefundTransactions', foreignKey: 'reference_transaction_id' });
 Transaction.belongsTo(Transaction, { as: 'ReferenceTransaction', foreignKey: 'reference_transaction_id' });
+
+JobCancellation.hasMany(Transaction, { as: 'PayoutTransactions', foreignKey: 'cancellation_id' });
+Transaction.belongsTo(JobCancellation, { as: 'Cancellation', foreignKey: 'cancellation_id' });
+
+Transaction.hasMany(JobCancellation, {
+    as: 'CustomerRefundCancellations',
+    foreignKey: 'customer_refund_transaction_id'
+});
+JobCancellation.belongsTo(Transaction, {
+    as: 'CustomerRefundTransaction',
+    foreignKey: 'customer_refund_transaction_id'
+});
+
+Transaction.hasMany(JobCancellation, {
+    as: 'HandymanCompensationCancellations',
+    foreignKey: 'handyman_compensation_transaction_id'
+});
+JobCancellation.belongsTo(Transaction, {
+    as: 'HandymanCompensationTransaction',
+    foreignKey: 'handyman_compensation_transaction_id'
+});
+
+Transaction.hasMany(JobCancellation, {
+    as: 'PlatformCancellationFees',
+    foreignKey: 'platform_transaction_id'
+});
+JobCancellation.belongsTo(Transaction, {
+    as: 'PlatformTransaction',
+    foreignKey: 'platform_transaction_id'
+});
 
 Job.hasMany(EvidenceVault, { as: 'EvidenceVaults', foreignKey: 'job_id' });
 EvidenceVault.belongsTo(Job, { foreignKey: 'job_id' });
@@ -280,6 +322,13 @@ const reportIndexSyncFailure = (error) => {
             + 'Resolve duplicate quote drafts or versions for the same job/cycle before restarting.'
         );
     }
+    if (errorText.includes('job_cancellations_one_active_per_cycle')
+        || errorText.includes('transactions_idempotency_key_unique')) {
+        console.error(
+            '[matchmaking] ERROR: DB_SYNC_ALTER could not create the mandatory cancellation indexes. '
+            + 'Resolve duplicate active cancellations or transaction idempotency keys before restarting.'
+        );
+    }
 };
 
 const verifyArrivalRequestIndexes = async () => {
@@ -357,6 +406,46 @@ const verifyJobQuoteIndexes = async () => {
     console.log('Job Quote indexes verified successfully.');
 };
 
+const verifyCancellationIndexes = async () => {
+    const [cancellationIndexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Job_Cancellations'
+          AND indexname = 'job_cancellations_one_active_per_cycle'
+    `);
+    const cancellationIndex = String(cancellationIndexes[0]?.indexdef || '');
+    if (!cancellationIndex.includes('UNIQUE')
+        || !cancellationIndex.includes('job_id')
+        || !cancellationIndex.includes('acceptance_cycle')
+        || !cancellationIndex.includes('WHERE')
+        || !cancellationIndex.includes('AWAITING_COUNTERPARTY')
+        || !cancellationIndex.includes('REVIEW_REQUIRED')) {
+        throw new Error(
+            'Required partial unique index job_cancellations_one_active_per_cycle is missing. '
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+
+    const [transactionIndexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'Transactions'
+          AND indexname = 'transactions_idempotency_key_unique'
+    `);
+    const idempotencyIndex = String(transactionIndexes[0]?.indexdef || '');
+    if (!idempotencyIndex.includes('UNIQUE')
+        || !idempotencyIndex.includes('idempotency_key')
+        || !idempotencyIndex.includes('WHERE')) {
+        throw new Error(
+            'Required unique index transactions_idempotency_key_unique is missing. '
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    console.log('Cancellation indexes verified successfully.');
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -384,6 +473,7 @@ const initDatabase = async () => {
         await verifyChatIndexes();
         await verifyArrivalRequestIndexes();
         await verifyJobQuoteIndexes();
+        await verifyCancellationIndexes();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

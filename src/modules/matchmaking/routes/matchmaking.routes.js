@@ -23,6 +23,12 @@ import {
     handleCancelByHandyman
 } from '../controllers/AcceptedCancellation.controller.js';
 import {
+    handleConfirmCancellation,
+    handleCreateCancellation,
+    handleGetCurrentCancellation,
+    handleRejectCancellation
+} from '../controllers/LifecycleCancellation.controller.js';
+import {
     handleConfirmArrival,
     handleRejectArrival,
     handleRequestArrival
@@ -85,6 +91,30 @@ router.post(
     checkUserJWT,
     checkUserRole(['HANDYMAN']),
     handleCancelByHandyman
+);
+router.post(
+    '/jobs/:jobId/cancellations',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN']),
+    handleCreateCancellation
+);
+router.get(
+    '/jobs/:jobId/cancellations/current',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    handleGetCurrentCancellation
+);
+router.post(
+    '/jobs/:jobId/cancellations/:cancellationId/confirm',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN']),
+    handleConfirmCancellation
+);
+router.post(
+    '/jobs/:jobId/cancellations/:cancellationId/reject',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER', 'HANDYMAN']),
+    handleRejectCancellation
 );
 router.post(
     '/jobs/:id/start-moving',

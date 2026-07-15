@@ -9,7 +9,7 @@ const Job = db.define('Job', {
     final_agreed_price: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     deposit_amount: { type: DataTypes.DECIMAL(15, 2), allowNull: true },
     deposit_status: {
-        type: DataTypes.ENUM('HELD', 'REFUNDED'),
+        type: DataTypes.ENUM('HELD', 'REFUNDED', 'DISTRIBUTED'),
         allowNull: true
     },
     deposit_paid_at: { type: DataTypes.DATE, allowNull: true },
@@ -61,6 +61,7 @@ const Job = db.define('Job', {
             'EN_ROUTE',
             'ARRIVED',
             'QUOTE_PENDING',
+            'CANCELLATION_REVIEW',
             'IN_PROGRESS',
             'WARRANTY',
             'CLOSED',

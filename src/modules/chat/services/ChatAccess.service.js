@@ -58,19 +58,42 @@ const validateLockedConversationAccess = async ({
   conversation,
   job,
   userId,
-  transaction
+  transaction,
+  allowClosed = false
 }) => {
   assertConversationMembership(conversation, userId);
 
   if (conversation.status === CONVERSATION_STATUSES.CLOSED) {
-    throw chatError('Conversation is closed.', 409, 'CONVERSATION_CLOSED', {
-      reason: conversation.closed_reason,
-      closed_at: conversation.closed_at
-    });
+    if (!allowClosed || job.current_status !== 'CANCELLED') {
+      throw chatError('Conversation is closed.', 409, 'CONVERSATION_CLOSED', {
+        reason: conversation.closed_reason,
+        closed_at: conversation.closed_at
+      });
+    }
+    assertConversationMatchesJob(conversation, job);
+    const participants = await loadParticipants(conversation, { transaction });
+    const currentUser = userId === conversation.customer_id
+      ? participants.customer
+      : participants.handyman;
+    const partner = userId === conversation.customer_id
+      ? participants.handyman
+      : participants.customer;
+    return { currentUser, partner, ...participants, readOnly: true };
   }
 
   const reconciliation = await reconcileConversationWithJob(conversation, job, { transaction });
   if (reconciliation.changed || !isChatAllowedJobStatus(job.current_status)) {
+    if (allowClosed && job.current_status === 'CANCELLED') {
+      assertConversationMatchesJob(conversation, job);
+      const participants = await loadParticipants(conversation, { transaction });
+      const currentUser = userId === conversation.customer_id
+        ? participants.customer
+        : participants.handyman;
+      const partner = userId === conversation.customer_id
+        ? participants.handyman
+        : participants.customer;
+      return { currentUser, partner, ...participants, readOnly: true };
+    }
     return {
       accessError: chatError('Conversation is closed.', 409, 'CONVERSATION_CLOSED', {
         reason: reconciliation.reason,
@@ -91,7 +114,12 @@ const validateLockedConversationAccess = async ({
   return { currentUser, partner, ...participants };
 };
 
-const getLockedConversationContext = async ({ conversationId, userId, transaction }) => {
+const getLockedConversationContext = async ({
+  conversationId,
+  userId,
+  transaction,
+  allowClosed = false
+}) => {
   assertValidUuid(conversationId, 'conversation id');
 
   const preliminary = await Conversation.findByPk(conversationId, { transaction });
@@ -120,7 +148,8 @@ const getLockedConversationContext = async ({ conversationId, userId, transactio
     conversation,
     job,
     userId,
-    transaction
+    transaction,
+    allowClosed
   });
   if (access.accessError) {
     return { conversation, job, accessError: access.accessError };

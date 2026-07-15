@@ -293,12 +293,17 @@ const getMyBidsService = async (handymanId) => {
 
         const unlockedStatuses = [
             'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING',
-            'IN_PROGRESS', 'WARRANTY', 'CLOSED'
+            'CANCELLATION_REVIEW', 'IN_PROGRESS', 'WARRANTY', 'CLOSED', 'CANCELLED'
         ];
         const safeBids = bids.map((bid) => {
             const data = bid.toJSON();
             const job = data.Job;
-            const contactUnlocked = bid.status === 'WON'
+            const selectedLifecycleBid = [
+                'WON',
+                'CANCELLED_BY_CUSTOMER',
+                'CANCELLED_BY_HANDYMAN'
+            ].includes(bid.status);
+            const contactUnlocked = selectedLifecycleBid
                 && job?.selected_handyman_id === handymanId
                 && unlockedStatuses.includes(job?.current_status);
 

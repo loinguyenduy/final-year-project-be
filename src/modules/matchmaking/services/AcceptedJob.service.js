@@ -1,4 +1,4 @@
-import { fn, col } from 'sequelize';
+import { fn, col, Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import Review from '../../dispute/models/Review.model.js';
 import EvidenceVault from '../../fintech/models/EvidenceVault.model.js';
@@ -34,6 +34,10 @@ import {
     normalizeStoredQuote,
     toCanonicalMoneyString
 } from '../utils/quote.util.js';
+import {
+    ACTIVE_CANCELLATION_STATUSES,
+    buildCancellationDto
+} from '../utils/cancellationPolicy.util.js';
 
 const serviceError = (EM, EC, code, DT = '') => ({ EM, EC, code, DT });
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -217,19 +221,33 @@ const buildAllowedActions = ({
     currentQuote,
     beforeEvidenceCount,
     quoteReadiness,
-    quoteConfig
+    quoteConfig,
+    currentCancellation,
+    currentUserId
 }) => {
     if (isAdmin) return [];
+    if (job.current_status === 'CANCELLATION_REVIEW') {
+        if (!currentCancellation) return [];
+        if (currentCancellation.status === 'AWAITING_COUNTERPARTY') {
+            return currentCancellation.cancelled_by_user_id === currentUserId
+                ? ['WAIT_CANCELLATION_RESPONSE']
+                : ['CONFIRM_CANCELLATION', 'REJECT_CANCELLATION'];
+        }
+        if (currentCancellation.status === 'REVIEW_REQUIRED') {
+            return ['WAIT_CANCELLATION_REVIEW'];
+        }
+        return [];
+    }
     if (job.current_status === 'ACCEPTED') {
         if (isCustomer) return ['REOPEN_BIDDING', 'CANCEL_JOB'];
         if (isSelectedHandyman) return ['START_MOVING', 'CANCEL_ACCEPTED_JOB'];
         return [];
     }
     if (job.current_status === 'ARRIVED') {
-        if (isCustomer) return ['WAIT_FOR_QUOTE'];
+        if (isCustomer) return ['WAIT_FOR_QUOTE', 'REQUEST_CANCELLATION'];
         if (!isSelectedHandyman) return [];
 
-        const actions = [];
+        const actions = ['REQUEST_CANCELLATION'];
         const evidenceLocked = currentQuote && currentQuote.status !== 'DRAFT';
         if (!evidenceLocked) {
             if (beforeEvidenceCount < quoteConfig.beforeEvidenceMaxFiles) {
@@ -246,21 +264,24 @@ const buildAllowedActions = ({
         return actions;
     }
     if (job.current_status === 'QUOTE_PENDING') {
-        if (isCustomer) return ['VIEW_QUOTE'];
-        if (isSelectedHandyman) return ['WAIT_FOR_CUSTOMER_QUOTE_RESPONSE'];
+        if (isCustomer) return ['VIEW_QUOTE', 'REQUEST_CANCELLATION'];
+        if (isSelectedHandyman) {
+            return ['WAIT_FOR_CUSTOMER_QUOTE_RESPONSE', 'REQUEST_CANCELLATION'];
+        }
         return [];
     }
     if (job.current_status !== 'EN_ROUTE') return [];
 
     if (pendingRequest) {
         return isCustomer
-            ? ['CONFIRM_ARRIVAL', 'REJECT_ARRIVAL']
-            : ['WAIT_ARRIVAL_CONFIRMATION'];
+            ? ['CONFIRM_ARRIVAL', 'REJECT_ARRIVAL', 'REQUEST_CANCELLATION']
+            : ['WAIT_ARRIVAL_CONFIRMATION', 'REQUEST_CANCELLATION'];
     }
+    if (isCustomer) return ['REQUEST_CANCELLATION'];
     if (!isSelectedHandyman) return [];
-    if (reviewRequired) return ['WAIT_ARRIVAL_REVIEW'];
-    if (retryAfterSeconds > 0) return ['WAIT_ARRIVAL_COOLDOWN'];
-    return ['REQUEST_ARRIVAL'];
+    if (reviewRequired) return ['WAIT_ARRIVAL_REVIEW', 'REQUEST_CANCELLATION'];
+    if (retryAfterSeconds > 0) return ['WAIT_ARRIVAL_COOLDOWN', 'REQUEST_CANCELLATION'];
+    return ['REQUEST_ARRIVAL', 'REQUEST_CANCELLATION'];
 };
 
 const getAcceptedDetailsService = async (jobId, currentUser) => {
@@ -290,7 +311,13 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             );
         }
 
-        if (!['ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING'].includes(job.current_status)) {
+        if (![
+            'ACCEPTED',
+            'EN_ROUTE',
+            'ARRIVED',
+            'QUOTE_PENDING',
+            'CANCELLATION_REVIEW'
+        ].includes(job.current_status)) {
             return serviceError(
                 'Job is not in an accepted lifecycle status.',
                 409,
@@ -338,7 +365,8 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
             rejectionCount,
             latestRejectedRequest,
             currentQuote,
-            beforeEvidenceCount
+            beforeEvidenceCount,
+            currentCancellation
         ] = await Promise.all([
             JobArrivalRequest.findOne({
                 where: { job_id: job.id, acceptance_cycle: job.acceptance_cycle },
@@ -377,6 +405,14 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     stage: 'BEFORE',
                     media_type: 'IMAGE'
                 }
+            }),
+            JobCancellation.findOne({
+                where: {
+                    job_id: job.id,
+                    acceptance_cycle: job.acceptance_cycle,
+                    status: { [Op.in]: ACTIVE_CANCELLATION_STATUSES }
+                },
+                order: [['createdAt', 'DESC']]
             })
         ]);
         const quoteItems = currentQuote
@@ -499,6 +535,7 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     retry_after_seconds: retryAfterSeconds || null
                 },
                 inspection_quote: inspectionQuote,
+                cancellation: buildCancellationDto(currentCancellation),
                 allowed_actions: buildAllowedActions({
                     job,
                     isCustomer,
@@ -510,7 +547,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     currentQuote,
                     beforeEvidenceCount,
                     quoteReadiness,
-                    quoteConfig
+                    quoteConfig,
+                    currentCancellation,
+                    currentUserId: currentUser.id
                 })
             }
         };

@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import Bid from '../models/Bid.model.js';
 import JobArrivalRequest from '../models/JobArrivalRequest.model.js';
+import JobCancellation from '../models/JobCancellation.model.js';
 import JobQuote from '../models/JobQuote.model.js';
 import JobStatusHistory from '../models/JobStatusHistory.model.js';
 
@@ -92,6 +93,17 @@ const transitionJobToAccepted = async ({
     { status: 'SUPERSEDED' },
     {
       where: { job_id: job.id, status: 'DRAFT' },
+      transaction
+    }
+  );
+
+  await JobCancellation.update(
+    { status: 'SUPERSEDED' },
+    {
+      where: {
+        job_id: job.id,
+        status: { [Op.in]: ['AWAITING_COUNTERPARTY', 'REVIEW_REQUIRED'] }
+      },
       transaction
     }
   );

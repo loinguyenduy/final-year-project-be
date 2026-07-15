@@ -12,7 +12,22 @@ const Transaction = db.define('Transaction', {
         allowNull: false 
     },
     transaction_type: { 
-        type: DataTypes.ENUM('TOP_UP', 'WITHDRAW', 'DEPOSIT_10', 'LOCK_100', 'PLATFORM_FEE_10', 'WARRANTY_HOLD_20', 'DISBURSE_80', 'WARRANTY_RELEASE', 'REFUND', 'DEPOSIT_REFUND', 'BONDING_DEPOSIT'),
+        type: DataTypes.ENUM(
+            'TOP_UP',
+            'WITHDRAW',
+            'DEPOSIT_10',
+            'LOCK_100',
+            'PLATFORM_FEE_10',
+            'WARRANTY_HOLD_20',
+            'DISBURSE_80',
+            'WARRANTY_RELEASE',
+            'REFUND',
+            'DEPOSIT_REFUND',
+            'BONDING_DEPOSIT',
+            'CANCELLATION_REFUND',
+            'CANCELLATION_COMPENSATION',
+            'CANCELLATION_PLATFORM_FEE'
+        ),
         allowNull: false 
     },
     status: { 
@@ -38,6 +53,14 @@ const Transaction = db.define('Transaction', {
     },
     reference_transaction_id: {
         type: DataTypes.UUID,
+        allowNull: true
+    },
+    cancellation_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    idempotency_key: {
+        type: DataTypes.STRING(160),
         allowNull: true
     }
 }, {
@@ -69,6 +92,18 @@ const Transaction = db.define('Transaction', {
                 status: 'SUCCESS',
                 reference_transaction_id: { [Op.ne]: null }
             }
+        },
+        {
+            name: 'transactions_idempotency_key_unique',
+            unique: true,
+            fields: ['idempotency_key'],
+            where: {
+                idempotency_key: { [Op.ne]: null }
+            }
+        },
+        {
+            name: 'transactions_cancellation_type',
+            fields: ['cancellation_id', 'transaction_type']
         }
     ]
 });

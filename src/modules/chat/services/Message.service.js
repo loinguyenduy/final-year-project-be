@@ -167,7 +167,8 @@ const getMessageHistoryService = async ({
     const context = await getLockedConversationContext({
       conversationId,
       userId,
-      transaction
+      transaction,
+      allowClosed: true
     });
     if (context.accessError) {
       deferredError = context.accessError;

@@ -211,7 +211,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
 
         const contactUnlockedStatuses = [
             'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING',
-            'IN_PROGRESS', 'WARRANTY', 'CLOSED'
+            'CANCELLATION_REVIEW', 'IN_PROGRESS', 'WARRANTY', 'CLOSED', 'CANCELLED'
         ];
         const contactIsUnlocked = Boolean(responseData.contact_unlocked_at)
             && contactUnlockedStatuses.includes(responseData.current_status);

@@ -325,22 +325,11 @@ const getConversationByJobService = async (jobId, userId) => {
       throw error;
     }
     assertConversationMembership(conversation, userId);
-    if (conversation.status === CONVERSATION_STATUSES.CLOSED) {
-      const error = chatError('Conversation is closed.', 409, 'CONVERSATION_CLOSED', {
-        reason: conversation.closed_reason,
-        closed_at: conversation.closed_at
-      });
-      if (reconciledStale) {
-        deferredError = error;
-        return;
-      }
-      throw error;
-    }
-
     const context = await getLockedConversationContext({
       conversationId: conversation.id,
       userId,
-      transaction
+      transaction,
+      allowClosed: true
     });
     if (context.accessError) {
       deferredError = context.accessError;

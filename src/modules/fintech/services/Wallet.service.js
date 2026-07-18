@@ -1,47 +1,57 @@
 import Wallet from '../models/Wallet.model.js';
 
+const SYSTEM_WALLET_TYPES = ['SYSTEM_PROFIT', 'SYSTEM_ESCROW'];
+
+const initializeSystemWallets = async (transaction = null) => {
+  const options = transaction ? { transaction } : {};
+
+  for (const walletType of SYSTEM_WALLET_TYPES) {
+    await Wallet.findOrCreate({
+      where: { wallet_type: walletType },
+      defaults: {
+        user_id: null,
+        wallet_type: walletType,
+        balance: 0
+      },
+      ...options
+    });
+  }
+};
+
 const initializeUserWallets = async (userId, role, transaction = null) => {
   try {
-    // Use the provided transaction if available, otherwise proceed without it
     const options = transaction ? { transaction } : {};
 
-    const existingWallet = await Wallet.findOne({
-      where: { user_id: userId },
-      ...options,
-    });
-
-    if (existingWallet) {
-      return { 
-        EM: "Wallets already exist for this user.", 
-        EC: 400, 
-        DT: "" 
+    if (role === "ADMIN") {
+      await initializeSystemWallets(transaction);
+      return {
+        EM: "Shared system wallets are ready.",
+        EC: 0,
+        DT: ""
       };
     }
 
-    const walletsToCreate = [];
+    let walletTypes = [];
 
     if (role === "CUSTOMER") {
-      walletsToCreate.push({ 
-        user_id: userId, 
-        wallet_type: "CUSTOMER_MAIN", 
-        balance: 0.0 
-      });
-
+      walletTypes = ["CUSTOMER_MAIN"];
     } else if (role === "HANDYMAN") {
-      walletsToCreate.push(
-        { user_id: userId, wallet_type: "HANDYMAN_MAIN", balance: 0.0 },
-        { user_id: userId, wallet_type: "HANDYMAN_ESCROW", balance: 0.0 }
-      );
-
-    } else if (role === "ADMIN") {
-      walletsToCreate.push(
-        { user_id: userId, wallet_type: "SYSTEM_PROFIT", balance: 0.0 },
-        { user_id: userId, wallet_type: "SYSTEM_ESCROW", balance: 0.0 }
-      );
+      walletTypes = ["HANDYMAN_MAIN", "HANDYMAN_ESCROW"];
     }
 
-    if (walletsToCreate.length > 0) {
-      await Wallet.bulkCreate(walletsToCreate, options);
+    for (const walletType of walletTypes) {
+      await Wallet.findOrCreate({
+        where: {
+          user_id: userId,
+          wallet_type: walletType
+        },
+        defaults: {
+          user_id: userId,
+          wallet_type: walletType,
+          balance: 0
+        },
+        ...options
+      });
     }
 
     return {
@@ -59,6 +69,33 @@ const initializeUserWallets = async (userId, role, transaction = null) => {
   }
 };
 
+const getSystemWalletsService = async () => {
+  try {
+    await initializeSystemWallets();
 
+    const wallets = await Wallet.findAll({
+      where: { wallet_type: SYSTEM_WALLET_TYPES },
+      attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked', 'updatedAt'],
+      order: [['wallet_type', 'ASC']]
+    });
 
-export { initializeUserWallets };
+    return {
+      EM: "System wallets retrieved successfully.",
+      EC: 0,
+      DT: wallets
+    };
+  } catch (error) {
+    console.error(">>> Error in getSystemWalletsService:", error);
+    return {
+      EM: "Unable to retrieve system wallets.",
+      EC: 500,
+      DT: []
+    };
+  }
+};
+
+export {
+  initializeUserWallets,
+  initializeSystemWallets,
+  getSystemWalletsService
+};

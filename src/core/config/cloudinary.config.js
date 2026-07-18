@@ -57,4 +57,36 @@ const uploadJobImagesMiddleware = multer({
   limits: { fileSize: 5 * 1024 * 1024 } 
 }).array('images', 5);
 
-export { cloudinary, uploadKycMiddleware, uploadJobImagesMiddleware };
+const readPositiveNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const beforeEvidenceMaxSizeBytes = Math.floor(
+  readPositiveNumber(process.env.BEFORE_EVIDENCE_MAX_SIZE_MB, 5) * 1024 * 1024
+);
+
+// BEFORE evidence is buffered so the service can calculate SHA-256 before
+// uploading. Authentication still runs before this middleware at the route.
+const uploadBeforeEvidenceMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: beforeEvidenceMaxSizeBytes,
+    files: 1
+  },
+  fileFilter: (_req, file, callback) => {
+    if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      const error = new Error('Only JPEG and PNG images are supported.');
+      error.code = 'INVALID_IMAGE_TYPE';
+      return callback(error);
+    }
+    return callback(null, true);
+  }
+}).single('image');
+
+export {
+  cloudinary,
+  uploadBeforeEvidenceMiddleware,
+  uploadKycMiddleware,
+  uploadJobImagesMiddleware
+};

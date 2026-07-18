@@ -1,0 +1,223 @@
+import { Server } from 'socket.io';
+import User from '../../identity/models/User.model.js';
+import {
+  CHAT_EVENTS,
+  getConversationRoom
+} from '../constants/chat.constants.js';
+import { getConversationForJoinService } from '../services/Conversation.service.js';
+import { sendMessageService } from '../services/Message.service.js';
+import { markConversationReadService } from '../services/ReadState.service.js';
+import { ChatError, chatError, toErrorEnvelope } from '../utils/chatError.util.js';
+import { consumeMessageToken } from '../utils/chatRateLimiter.util.js';
+import { isPlainObject, isValidUuid } from '../utils/chatValidation.util.js';
+import { registerChatIo } from './chat.gateway.js';
+import { authenticateSocket } from './socketAuth.middleware.js';
+import {
+  getUserRoom,
+  registerRealtimeIo
+} from '../../../core/realtime/realtime.gateway.js';
+
+const emitProtocolError = (socket, envelope) => socket.emit(CHAT_EVENTS.ERROR, envelope);
+
+const requireAcknowledgement = (socket, ack) => {
+  if (typeof ack === 'function') return true;
+  emitProtocolError(socket, {
+    EM: 'This event requires an acknowledgement callback.',
+    EC: 400,
+    code: 'SOCKET_ACK_REQUIRED',
+    DT: ''
+  });
+  return false;
+};
+
+const refreshSocketUser = async (socket) => {
+  const user = await User.findByPk(socket.data.user.id);
+  if (!user || !user.is_active) {
+    throw chatError(
+      'User account is inactive.',
+      409,
+      'PARTICIPANT_INACTIVE',
+      { caller_inactive: true }
+    );
+  }
+  if (!['CUSTOMER', 'HANDYMAN'].includes(user.role)) {
+    throw chatError('User is not allowed to use chat.', 403, 'SOCKET_UNAUTHORIZED');
+  }
+  socket.data.user = { id: user.id, role: user.role, full_name: user.full_name };
+  return user;
+};
+
+const handleEventError = (socket, ack, error, operation) => {
+  if (!(error instanceof ChatError)) {
+    console.error(`[chat] Socket ${operation} failed.`, {
+      socket_id: socket.id,
+      user_id: socket.data.user?.id,
+      error
+    });
+  }
+  const envelope = toErrorEnvelope(error);
+  if (typeof ack === 'function') ack(envelope);
+  else emitProtocolError(socket, envelope);
+
+  if (error instanceof ChatError && error.dt?.caller_inactive) {
+    setImmediate(() => socket.disconnect(true));
+  }
+};
+
+const registerChatHandlers = (socket) => {
+  socket.on(CHAT_EVENTS.JOIN, async (payload, ack) => {
+    if (!requireAcknowledgement(socket, ack)) return;
+    try {
+      await refreshSocketUser(socket);
+      if (!isPlainObject(payload) || !isValidUuid(payload.conversation_id)) {
+        throw chatError('Invalid conversation_id.', 400, 'VALIDATION_ERROR');
+      }
+      const conversation = await getConversationForJoinService(
+        payload.conversation_id,
+        socket.data.user.id
+      );
+      const room = getConversationRoom(conversation.id);
+      await socket.join(room);
+      ack({
+        EM: 'Conversation joined successfully.',
+        EC: 0,
+        code: 'CONVERSATION_JOINED',
+        DT: { conversation }
+      });
+    } catch (error) {
+      handleEventError(socket, ack, error, 'join');
+    }
+  });
+
+  socket.on(CHAT_EVENTS.LEAVE, async (payload, ack) => {
+    if (!requireAcknowledgement(socket, ack)) return;
+    try {
+      if (!isPlainObject(payload) || !isValidUuid(payload.conversation_id)) {
+        throw chatError('Invalid conversation_id.', 400, 'VALIDATION_ERROR');
+      }
+      await socket.leave(getConversationRoom(payload.conversation_id));
+      ack({
+        EM: 'Conversation left successfully.',
+        EC: 0,
+        code: 'CONVERSATION_LEFT',
+        DT: { conversation_id: payload.conversation_id }
+      });
+    } catch (error) {
+      handleEventError(socket, ack, error, 'leave');
+    }
+  });
+
+  socket.on(CHAT_EVENTS.SEND_MESSAGE, async (payload, ack) => {
+    if (!requireAcknowledgement(socket, ack)) return;
+    try {
+      await refreshSocketUser(socket);
+      if (!isPlainObject(payload) || !isValidUuid(payload.conversation_id)) {
+        throw chatError('Invalid message payload.', 400, 'VALIDATION_ERROR');
+      }
+      const room = getConversationRoom(payload.conversation_id);
+      if (!socket.rooms.has(room)) {
+        throw chatError('Socket must join the conversation first.', 409, 'SOCKET_NOT_JOINED');
+      }
+
+      const rate = consumeMessageToken(socket.data.user.id);
+      if (!rate.allowed) {
+        throw chatError('Message rate limit exceeded.', 429, 'RATE_LIMITED', {
+          retry_after_ms: rate.retryAfterMs
+        });
+      }
+
+      const result = await sendMessageService({
+        conversationId: payload.conversation_id,
+        senderId: socket.data.user.id,
+        clientMessageId: payload.client_message_id,
+        content: payload.content
+      });
+      ack({
+        EM: result.duplicate ? 'Message already saved.' : 'Message sent successfully.',
+        EC: 0,
+        code: result.duplicate ? 'MESSAGE_DUPLICATE' : 'MESSAGE_SENT',
+        DT: result
+      });
+
+      if (!result.duplicate) {
+        socket.to(room).emit(CHAT_EVENTS.NEW_MESSAGE, result.message);
+      }
+    } catch (error) {
+      handleEventError(socket, ack, error, 'send');
+    }
+  });
+
+  socket.on(CHAT_EVENTS.READ, async (payload, ack) => {
+    if (!requireAcknowledgement(socket, ack)) return;
+    try {
+      await refreshSocketUser(socket);
+      if (!isPlainObject(payload) || !isValidUuid(payload.conversation_id)) {
+        throw chatError('Invalid read payload.', 400, 'VALIDATION_ERROR');
+      }
+      const room = getConversationRoom(payload.conversation_id);
+      if (!socket.rooms.has(room)) {
+        throw chatError('Socket must join the conversation first.', 409, 'SOCKET_NOT_JOINED');
+      }
+
+      const result = await markConversationReadService({
+        conversationId: payload.conversation_id,
+        userId: socket.data.user.id,
+        lastMessageId: payload.last_message_id
+      });
+      ack({
+        EM: 'Conversation read state updated.',
+        EC: 0,
+        code: 'READ_STATE_UPDATED',
+        DT: result
+      });
+
+      if (result.advanced) {
+        const { advanced: _advanced, ...eventPayload } = result;
+        socket.to(room).emit(CHAT_EVENTS.READ_UPDATED, eventPayload);
+      }
+    } catch (error) {
+      handleEventError(socket, ack, error, 'read');
+    }
+  });
+};
+
+const parseCorsOrigins = () => {
+  const raw = process.env.SOCKET_CORS_ORIGIN
+    || process.env.FRONTEND_URL
+    || 'http://localhost:5173';
+  const origins = raw.split(',').map((value) => value.trim()).filter(Boolean);
+  return origins.length === 1 ? origins[0] : origins;
+};
+
+const initializeChatSocket = (httpServer) => {
+  const io = new Server(httpServer, {
+    cors: {
+      origin: parseCorsOrigins(),
+      credentials: true,
+      methods: ['GET', 'POST']
+    }
+  });
+
+  io.use(authenticateSocket);
+  io.on('connection', (socket) => {
+    socket.join(getUserRoom(socket.data.user.id));
+    console.info('[chat] Socket connected.', {
+      socket_id: socket.id,
+      user_id: socket.data.user.id
+    });
+    registerChatHandlers(socket);
+    socket.on('disconnect', (reason) => {
+      console.info('[chat] Socket disconnected.', {
+        socket_id: socket.id,
+        user_id: socket.data.user.id,
+        reason
+      });
+    });
+  });
+
+  registerChatIo(io);
+  registerRealtimeIo(io);
+  return io;
+};
+
+export { initializeChatSocket };

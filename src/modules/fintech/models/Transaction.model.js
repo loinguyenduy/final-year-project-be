@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 
 const Transaction = db.define('Transaction', {
@@ -12,7 +12,23 @@ const Transaction = db.define('Transaction', {
         allowNull: false 
     },
     transaction_type: { 
-        type: DataTypes.ENUM('TOP_UP', 'WITHDRAW', 'DEPOSIT_10', 'LOCK_100', 'PLATFORM_FEE_10', 'WARRANTY_HOLD_20', 'DISBURSE_80', 'WARRANTY_RELEASE', 'REFUND', 'BONDING_DEPOSIT'), 
+        type: DataTypes.ENUM(
+            'TOP_UP',
+            'WITHDRAW',
+            'DEPOSIT_10',
+            'LOCK_100',
+            'PLATFORM_FEE_10',
+            'WARRANTY_HOLD_20',
+            'DISBURSE_80',
+            'WARRANTY_RELEASE',
+            'REFUND',
+            'DEPOSIT_REFUND',
+            'BONDING_DEPOSIT',
+            'CANCELLATION_REFUND',
+            'CANCELLATION_COMPENSATION',
+            'CANCELLATION_PLATFORM_FEE',
+            'SERVICE_REMAINING_PAYMENT'
+        ),
         allowNull: false 
     },
     status: { 
@@ -26,12 +42,93 @@ const Transaction = db.define('Transaction', {
     payment_gateway_code: {
         type: DataTypes.STRING(50),
         allowNull: true,
-        comment: 'Store the orderCode from PayOS or VNPay transaction ID'
+        comment: 'Store the external payment gateway order code'
     },
     description: {
         type: DataTypes.STRING(255),
         allowNull: true
+    },
+    expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    reference_transaction_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    cancellation_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    quote_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    acceptance_cycle: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
+    payer_user_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    idempotency_key: {
+        type: DataTypes.STRING(160),
+        allowNull: true
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        {
+            name: 'transactions_gateway_code_unique',
+            unique: true,
+            fields: ['payment_method', 'payment_gateway_code'],
+            where: {
+                payment_gateway_code: { [Op.ne]: null }
+            }
+        },
+        {
+            name: 'transactions_one_pending_deposit_per_job',
+            unique: true,
+            fields: ['job_id'],
+            where: {
+                transaction_type: 'DEPOSIT_10',
+                status: 'PENDING'
+            }
+        },
+        {
+            name: 'transactions_one_successful_refund_per_deposit',
+            unique: true,
+            fields: ['reference_transaction_id'],
+            where: {
+                transaction_type: 'DEPOSIT_REFUND',
+                status: 'SUCCESS',
+                reference_transaction_id: { [Op.ne]: null }
+            }
+        },
+        {
+            name: 'transactions_idempotency_key_unique',
+            unique: true,
+            fields: ['idempotency_key'],
+            where: {
+                idempotency_key: { [Op.ne]: null }
+            }
+        },
+        {
+            name: 'transactions_cancellation_type',
+            fields: ['cancellation_id', 'transaction_type']
+        },
+        {
+            name: 'transactions_one_successful_remaining_payment_per_quote',
+            unique: true,
+            fields: ['job_id', 'acceptance_cycle', 'quote_id'],
+            where: {
+                transaction_type: 'SERVICE_REMAINING_PAYMENT',
+                status: 'SUCCESS',
+                quote_id: { [Op.ne]: null }
+            }
+        }
+    ]
+});
 
 export default Transaction;

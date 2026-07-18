@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "chat:backfill-cycle": "node scripts/chat/backfillAcceptanceCycle.js",
+    "chat:test:manual": "node scripts/chat/manualChatTest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -31,10 +33,11 @@
     "passport-google-oauth20": "^2.0.0",
     "pg": "^8.20.0",
     "pg-harness": "^0.2.1",
-    "qs": "^6.15.1",
-    "sequelize": "^6.37.8"
+    "sequelize": "^6.37.8",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "socket.io-client": "^4.8.3"
   }
 }

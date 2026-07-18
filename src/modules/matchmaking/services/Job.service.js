@@ -11,6 +11,8 @@ import Ward from '../models/Ward.model.js';
 import db from '../../../core/database/connection.js';
 import { buildMatchResultsForBids } from './CustomerHandymanSelection.service.js';
 import { calculateDistanceKm } from '../utils/location.util.js';
+import JobCancellation from '../models/JobCancellation.model.js';
+import { buildCancellationDto } from '../utils/cancellationPolicy.util.js';
 
 const getServicesCategoryService = async () => {
     try {
@@ -162,6 +164,22 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
             && !ownBid
         ) {
             return { EM: "You do not have permission to view this job.", EC: 403, DT: "" };
+        }
+
+        responseData.allowed_actions = isOwnerCustomer
+            ? responseData.current_status === 'POSTED'
+                ? ['EDIT_JOB', 'CANCEL_JOB']
+                : responseData.current_status === 'BIDDING'
+                    ? ['CANCEL_JOB']
+                    : []
+            : [];
+        responseData.cancellation = null;
+        if (responseData.current_status === 'CANCELLED' && (isOwnerCustomer || isAdmin)) {
+            const latestCancellation = await JobCancellation.findOne({
+                where: { job_id: responseData.id },
+                order: [['createdAt', 'DESC']]
+            });
+            responseData.cancellation = buildCancellationDto(latestCancellation);
         }
 
         if (requestingUser?.role === 'CUSTOMER' && responseData.Bids?.length > 0) {

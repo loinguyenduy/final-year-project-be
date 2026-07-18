@@ -4,6 +4,10 @@ import Bid from '../../matchmaking/models/Bid.model.js';
 import { transitionJobToAccepted } from '../../matchmaking/services/AcceptedTransition.service.js';
 import Transaction from '../models/Transaction.model.js';
 import Wallet from '../models/Wallet.model.js';
+import {
+  JOB_LIFECYCLE_EVENTS,
+  emitJobLifecycleEvent
+} from '../../matchmaking/sockets/JobLifecycle.gateway.js';
 
 const DEPOSIT_RATE = 0.1;
 
@@ -194,6 +198,12 @@ const acceptBidWithWalletDepositService = async (customerId, jobId, bidId) => {
       expires_at: null
     }, { transaction: trans });
 
+    const bidderRows = await Bid.findAll({
+      where: { job_id: job.id },
+      attributes: ['handyman_id'],
+      transaction: trans
+    });
+
     const acceptedTransition = await transitionJobToAccepted({
       job,
       selectedBid: bid,
@@ -205,6 +215,19 @@ const acceptBidWithWalletDepositService = async (customerId, jobId, bidId) => {
     });
 
     await trans.commit();
+    if (acceptedTransition.transitioned) {
+      emitJobLifecycleEvent({
+        event: JOB_LIFECYCLE_EVENTS.ACCEPTED,
+        userIds: [job.customer_id, ...bidderRows.map((row) => row.handyman_id)],
+        payload: {
+          job_id: job.id,
+          current_status: 'ACCEPTED',
+          acceptance_cycle: acceptedTransition.acceptanceCycle,
+          selected_handyman_id: bid.handyman_id,
+          occurred_at: acceptedTransition.acceptedAt
+        }
+      });
+    }
 
     return {
       EM: "Bid accepted and 10% deposit paid from wallet successfully.",

@@ -1,3 +1,6 @@
+> Superseded. Do not use the legacy Draft payload examples in this file. Use
+> `manual-quote-policy-rollout.md` and the frontend end-to-end manual instead.
+
 # Hướng dẫn kiểm thử thủ công ARRIVED → QUOTE_PENDING
 
 ## 1. Mục tiêu và điều kiện an toàn

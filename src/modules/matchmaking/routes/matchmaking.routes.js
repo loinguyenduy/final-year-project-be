@@ -1,5 +1,11 @@
 import express from 'express';
-import { handleCreateJob, handleGetCustomerJobs } from '../controllers/CustomerJob.controller.js';
+import {
+    handleCancelPreAcceptanceJob,
+    handleCreateJob,
+    handleGetCustomerJobs,
+    handlePreflightEditJob,
+    handleUpdatePostedJob
+} from '../controllers/CustomerJob.controller.js';
 import { handleGetAvailableJobs } from '../controllers/HandymanJob.controller.js';
 import { handleGetJobDetails, handleGetServices } from '../controllers/Job.controller.js';
 import {
@@ -64,6 +70,20 @@ router.post('/locations/geocode', checkUserJWT, checkUserRole(['CUSTOMER']), han
 router.post('/locations/reverse-geocode', checkUserJWT, checkUserRole(['CUSTOMER']), handleReverseGeocode);
 router.post('/jobs', checkUserJWT, checkUserRole(['CUSTOMER']), uploadJobImagesMiddleware, handleCreateJob);
 router.get('/jobs', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetCustomerJobs);
+router.patch(
+    '/jobs/:jobId',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handlePreflightEditJob,
+    uploadJobImagesMiddleware,
+    handleUpdatePostedJob
+);
+router.post(
+    '/jobs/:jobId/pre-acceptance-cancellation',
+    checkUserJWT,
+    checkUserRole(['CUSTOMER']),
+    handleCancelPreAcceptanceJob
+);
 
 // HANDYMAN JOB
 router.get('/jobs/available', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetAvailableJobs);

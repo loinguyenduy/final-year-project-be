@@ -414,6 +414,18 @@ const verifyJobQuoteIndexes = async () => {
           AND indexname = 'job_quote_items_quote_sort_unique'
     `);
     const itemSortIndex = String(itemIndexes[0]?.indexdef || '');
+    const [itemColumns] = await db.query(`
+        SELECT column_name, data_type, is_nullable, character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Job_Quote_Items'
+          AND column_name IN ('name', 'description', 'quantity', 'unit')
+    `);
+    const columnsByName = new Map(itemColumns.map((column) => [column.column_name, column]));
+    const nameColumn = columnsByName.get('name');
+    const descriptionColumn = columnsByName.get('description');
+    const quantityColumn = columnsByName.get('quantity');
+    const unitColumn = columnsByName.get('unit');
 
     if (!versionIndex.includes('UNIQUE')
         || !versionIndex.includes('job_id')
@@ -440,6 +452,20 @@ const verifyJobQuoteIndexes = async () => {
         throw new Error(
             'Required unique index job_quote_items_quote_sort_unique is missing. '
             + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    if (!nameColumn
+        || nameColumn.is_nullable !== 'NO'
+        || Number(nameColumn.character_maximum_length) !== 150
+        || !descriptionColumn
+        || descriptionColumn.is_nullable !== 'YES'
+        || !quantityColumn
+        || quantityColumn.data_type !== 'integer'
+        || !unitColumn
+        || Number(unitColumn.character_maximum_length) !== 30) {
+        throw new Error(
+            'Required Job Quote item schema is missing. Clean the selected development '
+            + 'Quote data, then run once with DB_SYNC_ALTER=true.'
         );
     }
     console.log('Job Quote indexes verified successfully.');

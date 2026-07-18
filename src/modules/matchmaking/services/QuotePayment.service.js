@@ -48,15 +48,13 @@ const validateCanonicalQuote = (quote, items, bidAmount) => {
     const storedSubtotal = parseVndInteger(quote.subtotal_amount);
     const storedDiscount = parseVndInteger(quote.discount_amount);
     const canonicalSubtotal = parseVndInteger(normalized.data.subtotal_amount);
-    const canonicalDiscount = parseVndInteger(normalized.data.discount_amount);
     if (!storedTotal.valid
         || !storedSubtotal.valid
         || !storedDiscount.valid
         || !canonicalSubtotal.valid
-        || !canonicalDiscount.valid
         || storedTotal.amount !== normalized.total
         || storedSubtotal.amount !== canonicalSubtotal.amount
-        || storedDiscount.amount !== canonicalDiscount.amount) {
+        || storedDiscount.amount !== 0n) {
         return {
             valid: false,
             code: 'FINANCIAL_DATA_INCONSISTENT',
@@ -544,7 +542,7 @@ const payRemainingAmountService = async (jobId, currentUser, payload = {}) => {
             status: 'ACTIVE',
             currency: 'VND',
             subtotal_amount: normalized.data.subtotal_amount,
-            discount_amount: normalized.data.discount_amount,
+            discount_amount: 0,
             quote_total_amount: lockedAmounts.quoteTotal.toString(),
             deposit_amount: lockedAmounts.depositAmount.toString(),
             remaining_payment_amount: lockedAmounts.remainingAmount.toString(),

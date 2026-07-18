@@ -240,6 +240,16 @@ const buildCancellationDto = (cancellation) => {
         && record.platform_amount !== null
         && record.platform_amount !== undefined;
 
+    const hasDeposit = record.deposit_amount !== null
+        && record.deposit_amount !== undefined;
+    const hasLegacyRefund = record.refund_amount !== null
+        && record.refund_amount !== undefined;
+    const fundsStatus = !hasDeposit && !hasLegacyRefund
+        ? 'NOT_APPLICABLE'
+        : record.status === 'RESOLVED' || (record.status == null && hasLegacyRefund)
+            ? 'RELEASED'
+            : 'HELD';
+
     return {
         cancellation_id: record.id,
         job_id: record.job_id,
@@ -256,12 +266,14 @@ const buildCancellationDto = (cancellation) => {
         status: record.status,
         financial_preview: {
             deposit_amount: moneyString(record.deposit_amount),
-            customer_refund_amount: hasDistribution ? moneyString(record.refund_amount) : null,
+            customer_refund_amount: hasDistribution || hasLegacyRefund
+                ? moneyString(record.refund_amount)
+                : null,
             handyman_compensation_amount: hasDistribution
                 ? moneyString(record.handyman_compensation_amount)
                 : null,
             platform_amount: hasDistribution ? moneyString(record.platform_amount) : null,
-            funds_status: record.status === 'RESOLVED' ? 'RELEASED' : 'HELD'
+            funds_status: fundsStatus
         },
         counterparty_response: record.counterparty_response,
         counterparty_response_note: record.counterparty_response_note,

@@ -67,15 +67,13 @@ const validateStoredQuoteCanonicalTotal = (quote, normalized) => {
     const storedSubtotal = parseVndInteger(quote.subtotal_amount);
     const storedDiscount = parseVndInteger(quote.discount_amount);
     const canonicalSubtotal = parseVndInteger(normalized.data.subtotal_amount);
-    const canonicalDiscount = parseVndInteger(normalized.data.discount_amount);
     if (!storedTotal.valid
         || !storedSubtotal.valid
         || !storedDiscount.valid
         || !canonicalSubtotal.valid
-        || !canonicalDiscount.valid
         || storedTotal.amount !== normalized.total
         || storedSubtotal.amount !== canonicalSubtotal.amount
-        || storedDiscount.amount !== canonicalDiscount.amount) {
+        || storedDiscount.amount !== 0n) {
         return serviceError(
             'Stored Quote totals do not match the canonical Quote items.',
             409,

@@ -1,6 +1,10 @@
 import { emitToUsers } from '../../../core/realtime/realtime.gateway.js';
 
 const JOB_LIFECYCLE_EVENTS = Object.freeze({
+    BID_SUBMITTED: 'JOB_BID_SUBMITTED',
+    BID_UPDATED: 'JOB_BID_UPDATED',
+    BID_WITHDRAWN: 'JOB_BID_WITHDRAWN',
+    ACCEPTED: 'JOB_ACCEPTED',
     EN_ROUTE: 'JOB_EN_ROUTE',
     ARRIVAL_REQUESTED: 'JOB_ARRIVAL_REQUESTED',
     ARRIVAL_REJECTED: 'JOB_ARRIVAL_REJECTED',

@@ -112,6 +112,7 @@ const createContractIdentity = (now = new Date()) => {
 
 const buildQuoteItemSnapshot = (item) => ({
     item_type: item.item_type,
+    name: item.name,
     description: item.description,
     quantity: toCanonicalMoneyString(item.quantity),
     unit: item.unit,
@@ -150,7 +151,6 @@ const buildContractDto = (contract) => {
         status: contract.status,
         currency: contract.currency,
         subtotal_amount: toCanonicalMoneyString(contract.subtotal_amount),
-        discount_amount: toCanonicalMoneyString(contract.discount_amount),
         quote_total_amount: toCanonicalMoneyString(contract.quote_total_amount),
         deposit_amount: toCanonicalMoneyString(contract.deposit_amount),
         remaining_payment_amount: toCanonicalMoneyString(

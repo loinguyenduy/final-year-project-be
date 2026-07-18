@@ -25,6 +25,7 @@ import {
 const buildQuoteItemDto = (item) => ({
     id: item.id,
     item_type: item.item_type,
+    name: item.name,
     description: item.description,
     quantity: toCanonicalMoneyString(item.quantity),
     unit: item.unit,
@@ -49,14 +50,15 @@ const buildQuoteDto = (quote, items = [], {
     estimated_duration_minutes: quote.estimated_duration_minutes,
     warranty_days: quote.warranty_days,
     subtotal_amount: toCanonicalMoneyString(quote.subtotal_amount),
-    discount_amount: toCanonicalMoneyString(quote.discount_amount),
     total_amount: toCanonicalMoneyString(quote.total_amount),
     currency: quote.currency,
     bid_reference_amount: toCanonicalMoneyString(quote.bid_reference_amount),
-    variance_amount: toCanonicalMoneyString(quote.variance_amount),
-    variance_percent: toCanonicalMoneyString(quote.variance_percent),
-    variance_reason: quote.variance_reason,
-    variance_reason_text: quote.variance_reason_text,
+    ...(includeDraftRevision ? {
+        variance_amount: toCanonicalMoneyString(quote.variance_amount),
+        variance_percent: toCanonicalMoneyString(quote.variance_percent),
+        variance_reason: quote.variance_reason,
+        variance_reason_text: quote.variance_reason_text
+    } : {}),
     submitted_at: quote.submitted_at,
     customer_responded_at: quote.customer_responded_at,
     accepted_at: quote.accepted_at,
@@ -223,6 +225,7 @@ const createOrGetQuoteDraftService = async (jobId, handymanId) => {
             version: 1,
             draft_revision: 0,
             status: 'DRAFT',
+            warranty_days: getQuoteConfig().standardWarrantyDays,
             subtotal_amount: 0,
             discount_amount: 0,
             total_amount: 0,
@@ -287,7 +290,8 @@ const updateQuoteDraftService = async (jobId, quoteId, handymanId, payload) => {
         }
 
         const normalized = validateDraftPayload(payload, {
-            bidReferenceAmount: validation.selectedBid.proposed_price
+            bidReferenceAmount: validation.selectedBid.proposed_price,
+            warrantyDays: quote.warranty_days
         });
         if (!normalized.valid) {
             await transaction.rollback();
@@ -332,7 +336,11 @@ const updateQuoteDraftService = async (jobId, quoteId, handymanId, payload) => {
             },
             transaction
         });
-        const readiness = buildSubmitReadiness({ normalized, evidenceCount });
+        const readiness = buildSubmitReadiness({
+            normalized,
+            evidenceCount,
+            heldDepositAmount: job.deposit_amount
+        });
         await transaction.commit();
 
         return {
@@ -354,7 +362,9 @@ const updateQuoteDraftService = async (jobId, quoteId, handymanId, payload) => {
 };
 
 const getReadinessError = (readiness) => {
-    const code = readiness.missing_requirements[0] || 'QUOTE_NOT_READY';
+    const code = readiness.missing_requirements.includes('QUOTE_TOTAL_BELOW_HELD_DEPOSIT')
+        ? 'QUOTE_TOTAL_BELOW_HELD_DEPOSIT'
+        : readiness.missing_requirements[0] || 'QUOTE_NOT_READY';
     const messages = {
         BEFORE_EVIDENCE_REQUIRED: 'At least one BEFORE evidence image is required.',
         PROBLEM_SUMMARY_REQUIRED: 'problem_summary is required before submitting.',
@@ -363,6 +373,8 @@ const getReadinessError = (readiness) => {
         WARRANTY_DAYS_REQUIRED: 'warranty_days is required before submitting.',
         QUOTE_ITEMS_REQUIRED: 'At least one quote item is required.',
         INVALID_QUOTE_AMOUNT: 'Quote total must be greater than zero.',
+        QUOTE_TOTAL_BELOW_HELD_DEPOSIT: 'Quote total cannot be lower than the held deposit.',
+        ACCEPTED_DATA_INCONSISTENT: 'Accepted Job financial data is inconsistent.',
         VARIANCE_REASON_REQUIRED: 'A variance reason is required for this quote.',
         VARIANCE_REASON_TEXT_REQUIRED: 'variance_reason_text is required when reason is OTHER.'
     };
@@ -482,7 +494,8 @@ const submitQuoteService = async (jobId, quoteId, handymanId, payload = {}) => {
         }
         const readiness = buildSubmitReadiness({
             normalized,
-            evidenceCount: evidence.length
+            evidenceCount: evidence.length,
+            heldDepositAmount: job.deposit_amount
         });
         if (!readiness.ready) {
             await transaction.rollback();
@@ -492,6 +505,7 @@ const submitQuoteService = async (jobId, quoteId, handymanId, payload = {}) => {
         for (let index = 0; index < items.length; index += 1) {
             const canonicalItem = normalized.items[index];
             await items[index].update({
+                name: canonicalItem.name,
                 description: canonicalItem.description,
                 quantity: canonicalItem.quantity,
                 unit: canonicalItem.unit,

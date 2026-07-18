@@ -6,6 +6,10 @@ import Bid from '../../matchmaking/models/Bid.model.js';
 import JobStatusHistory from '../../matchmaking/models/JobStatusHistory.model.js';
 import { transitionJobToAccepted } from '../../matchmaking/services/AcceptedTransition.service.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
+import {
+  JOB_LIFECYCLE_EVENTS,
+  emitJobLifecycleEvent
+} from '../../matchmaking/sockets/JobLifecycle.gateway.js';
 
 const restoreJobToBidding = async (paymentTransaction, {
   transaction,
@@ -141,6 +145,7 @@ const processSuccessfulGatewayPayment = async ({
   paidAmount
 }) => {
   const trans = await db.transaction();
+  let acceptedEvent = null;
 
   try {
     const paymentTransaction = await Transaction.findOne({
@@ -246,7 +251,12 @@ const processSuccessfulGatewayPayment = async ({
         { transaction: trans }
       );
       await paymentTransaction.update({ status: 'SUCCESS' }, { transaction: trans });
-      await transitionJobToAccepted({
+      const bidderRows = await Bid.findAll({
+        where: { job_id: job.id },
+        attributes: ['handyman_id'],
+        transaction: trans
+      });
+      const acceptedTransition = await transitionJobToAccepted({
         job,
         selectedBid,
         depositTransaction: paymentTransaction,
@@ -255,6 +265,18 @@ const processSuccessfulGatewayPayment = async ({
         sourceStatus: 'PENDING_DEPOSIT',
         transaction: trans
       });
+      if (acceptedTransition.transitioned) {
+        acceptedEvent = {
+          userIds: [job.customer_id, ...bidderRows.map((row) => row.handyman_id)],
+          payload: {
+            job_id: job.id,
+            current_status: 'ACCEPTED',
+            acceptance_cycle: acceptedTransition.acceptanceCycle,
+            selected_handyman_id: selectedBid.handyman_id,
+            occurred_at: acceptedTransition.acceptedAt
+          }
+        };
+      }
     } else {
       await destinationWallet.increment(
         { balance: Number(paymentTransaction.amount) },
@@ -274,6 +296,12 @@ const processSuccessfulGatewayPayment = async ({
     }
 
     await trans.commit();
+    if (acceptedEvent) {
+      emitJobLifecycleEvent({
+        event: JOB_LIFECYCLE_EVENTS.ACCEPTED,
+        ...acceptedEvent
+      });
+    }
     return {
       EM: "Payment completed successfully.",
       EC: 0,

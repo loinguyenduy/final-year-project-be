@@ -7,7 +7,7 @@ const VARIANCE_REASONS = Object.freeze([
     'ACCESS_CONDITION_DIFFERENT',
     'OTHER'
 ]);
-const MAX_QUANTITY_SCALED = 999999999999n; // DECIMAL(12,3)
+const MAX_QUANTITY = 2147483647n; // PostgreSQL INTEGER
 const MAX_STORED_VND = 9999999999999n; // DECIMAL(15,2) with integer VND input
 
 const DEFAULT_QUOTE_CONFIG = Object.freeze({
@@ -16,12 +16,13 @@ const DEFAULT_QUOTE_CONFIG = Object.freeze({
     varianceThresholdPercent: 50,
     maxAmount: 100000000,
     maxDurationMinutes: 43200,
-    maxWarrantyDays: 3650,
+    standardWarrantyDays: 10,
     inspectionNoteMaxLength: 2000,
     quoteTextMaxLength: 2000,
     varianceReasonTextMaxLength: 500,
+    itemNameMaxLength: 150,
     itemDescriptionMaxLength: 500,
-    itemUnitMaxLength: 50
+    itemUnitMaxLength: 30
 });
 
 const readPositiveInteger = (value, fallback) => {
@@ -55,9 +56,12 @@ const getQuoteConfig = () => ({
         process.env.FINAL_QUOTE_MAX_DURATION_MINUTES,
         DEFAULT_QUOTE_CONFIG.maxDurationMinutes
     ),
-    maxWarrantyDays: readNonNegativeInteger(
-        process.env.FINAL_QUOTE_MAX_WARRANTY_DAYS,
-        DEFAULT_QUOTE_CONFIG.maxWarrantyDays
+    standardWarrantyDays: Math.min(
+        readNonNegativeInteger(
+            process.env.JOB_STANDARD_WARRANTY_DAYS,
+            DEFAULT_QUOTE_CONFIG.standardWarrantyDays
+        ),
+        3650
     ),
     inspectionNoteMaxLength: readPositiveInteger(
         process.env.INSPECTION_NOTE_MAX_LENGTH,
@@ -71,6 +75,7 @@ const getQuoteConfig = () => ({
         process.env.VARIANCE_REASON_TEXT_MAX_LENGTH,
         DEFAULT_QUOTE_CONFIG.varianceReasonTextMaxLength
     ),
+    itemNameMaxLength: DEFAULT_QUOTE_CONFIG.itemNameMaxLength,
     itemDescriptionMaxLength: DEFAULT_QUOTE_CONFIG.itemDescriptionMaxLength,
     itemUnitMaxLength: DEFAULT_QUOTE_CONFIG.itemUnitMaxLength
 });
@@ -117,24 +122,20 @@ const normalizeNullableInteger = (value, { field, min, max }) => {
     return { valid: true, value: parsed };
 };
 
-const parseUnsignedScaledDecimal = (value, scale, field) => {
+const parsePositiveInteger = (value, field) => {
     if (value === undefined || value === null || value === '') {
         return validationError(`${field} is required.`);
     }
-    if (typeof value === 'number' && !Number.isFinite(value)) {
-        return validationError(`${field} must be a finite decimal number.`);
+    if (typeof value === 'number' && !Number.isSafeInteger(value)) {
+        return validationError(`${field} must be a positive integer.`);
     }
     const raw = String(value).trim();
-    const match = raw.match(new RegExp(`^(\\d+)(?:\\.(\\d{1,${scale}}))?$`));
-    if (!match) {
-        return validationError(`${field} must have at most ${scale} decimal places.`);
+    if (!/^\d+$/.test(raw)) return validationError(`${field} must be a positive integer.`);
+    const integer = BigInt(raw);
+    if (integer <= 0n || integer > MAX_QUANTITY) {
+        return validationError(`${field} must be between 1 and ${MAX_QUANTITY}.`);
     }
-    const fraction = (match[2] || '').padEnd(scale, '0');
-    return {
-        valid: true,
-        scaled: BigInt(match[1]) * (10n ** BigInt(scale)) + BigInt(fraction || '0'),
-        raw
-    };
+    return { valid: true, value: integer };
 };
 
 const parseVndInteger = (value, field) => {
@@ -207,7 +208,14 @@ const normalizeQuoteItems = (items, config) => {
 
     const normalizedItems = [];
     let subtotal = 0n;
-    const allowedFields = new Set(['item_type', 'description', 'quantity', 'unit', 'unit_price']);
+    const allowedFields = new Set([
+        'item_type',
+        'name',
+        'description',
+        'quantity',
+        'unit',
+        'unit_price'
+    ]);
 
     for (let index = 0; index < rawItems.length; index += 1) {
         const item = rawItems[index];
@@ -225,16 +233,21 @@ const normalizeQuoteItems = (items, config) => {
             return validationError(`items[${index}].item_type is invalid.`, 'INVALID_QUOTE_ITEM');
         }
 
+        const name = normalizeOptionalText(item.name, {
+            field: `items[${index}].name`,
+            maxLength: config.itemNameMaxLength
+        });
+        if (!name.valid || !name.value) {
+            return validationError(
+                name.message || `items[${index}].name is required.`,
+                'INVALID_QUOTE_ITEM'
+            );
+        }
         const description = normalizeOptionalText(item.description, {
             field: `items[${index}].description`,
             maxLength: config.itemDescriptionMaxLength
         });
-        if (!description.valid || !description.value) {
-            return validationError(
-                description.message || `items[${index}].description is required.`,
-                'INVALID_QUOTE_ITEM'
-            );
-        }
+        if (!description.valid) return validationError(description.message, 'INVALID_QUOTE_ITEM');
         const unit = normalizeOptionalText(item.unit, {
             field: `items[${index}].unit`,
             maxLength: config.itemUnitMaxLength
@@ -245,19 +258,8 @@ const normalizeQuoteItems = (items, config) => {
                 'INVALID_QUOTE_ITEM'
             );
         }
-        const quantity = parseUnsignedScaledDecimal(item.quantity, 3, `items[${index}].quantity`);
-        if (!quantity.valid || quantity.scaled <= 0n) {
-            return validationError(
-                quantity.message || `items[${index}].quantity must be greater than zero.`,
-                'INVALID_QUOTE_ITEM'
-            );
-        }
-        if (quantity.scaled > MAX_QUANTITY_SCALED) {
-            return validationError(
-                `items[${index}].quantity exceeds database precision.`,
-                'INVALID_QUOTE_ITEM'
-            );
-        }
+        const quantity = parsePositiveInteger(item.quantity, `items[${index}].quantity`);
+        if (!quantity.valid) return validationError(quantity.message, 'INVALID_QUOTE_ITEM');
         const unitPrice = parseVndInteger(item.unit_price, `items[${index}].unit_price`);
         if (!unitPrice.valid) {
             return validationError(unitPrice.message, 'INVALID_QUOTE_ITEM');
@@ -269,15 +271,16 @@ const normalizeQuoteItems = (items, config) => {
             );
         }
 
-        const lineTotal = (quantity.scaled * unitPrice.value + 500n) / 1000n;
+        const lineTotal = quantity.value * unitPrice.value;
         if (lineTotal > MAX_STORED_VND || subtotal + lineTotal > MAX_STORED_VND) {
             return validationError('Quote subtotal exceeds database precision.', 'INVALID_QUOTE_AMOUNT');
         }
         subtotal += lineTotal;
         normalizedItems.push({
             item_type: item.item_type,
+            name: name.value,
             description: description.value,
-            quantity: formatScaledDecimal(quantity.scaled, 3),
+            quantity: quantity.value.toString(),
             unit: unit.value,
             unit_price: unitPrice.value.toString(),
             line_total: lineTotal.toString(),
@@ -308,6 +311,7 @@ const calculateVariance = ({ total, bidReference, thresholdPercent }) => {
 
 const validateDraftPayload = (payload, {
     bidReferenceAmount,
+    warrantyDays,
     requireExpectedRevision = true,
     config = getQuoteConfig()
 } = {}) => {
@@ -320,8 +324,6 @@ const validateDraftPayload = (payload, {
         'inspection_notes',
         'recommended_solution',
         'estimated_duration_minutes',
-        'warranty_days',
-        'discount_amount',
         'items',
         'variance_reason',
         'variance_reason_text'
@@ -370,10 +372,12 @@ const validateDraftPayload = (payload, {
     if (!duration.valid) {
         return validationError(duration.message, 'INVALID_ESTIMATED_DURATION');
     }
-    const warranty = normalizeNullableInteger(payload.warranty_days, {
-        field: 'warranty_days',
+    const warranty = normalizeNullableInteger(
+        warrantyDays ?? config.standardWarrantyDays,
+        {
+        field: 'warranty_days snapshot',
         min: 0,
-        max: config.maxWarrantyDays
+        max: 3650
     });
     if (!warranty.valid) {
         return validationError(warranty.message, 'INVALID_WARRANTY_DAYS');
@@ -381,17 +385,7 @@ const validateDraftPayload = (payload, {
 
     const itemsResult = normalizeQuoteItems(payload.items, config);
     if (!itemsResult.valid) return itemsResult;
-    const discountResult = parseVndInteger(payload.discount_amount ?? 0, 'discount_amount');
-    if (!discountResult.valid || discountResult.value > itemsResult.subtotal) {
-        return validationError(
-            'discount_amount must be a VND integer between zero and subtotal.',
-            'INVALID_QUOTE_AMOUNT'
-        );
-    }
-    if (discountResult.value > MAX_STORED_VND) {
-        return validationError('discount_amount exceeds database precision.', 'INVALID_QUOTE_AMOUNT');
-    }
-    const total = itemsResult.subtotal - discountResult.value;
+    const total = itemsResult.subtotal;
     if (total > BigInt(config.maxAmount)) {
         return validationError(
             `total_amount must not exceed ${config.maxAmount} VND.`,
@@ -407,12 +401,12 @@ const validateDraftPayload = (payload, {
         thresholdPercent: config.varianceThresholdPercent
     });
 
-    const varianceReason = payload.variance_reason === undefined
+    const requestedVarianceReason = payload.variance_reason === undefined
         || payload.variance_reason === null
         || payload.variance_reason === ''
         ? null
         : payload.variance_reason;
-    if (varianceReason !== null && !VARIANCE_REASONS.includes(varianceReason)) {
+    if (requestedVarianceReason !== null && !VARIANCE_REASONS.includes(requestedVarianceReason)) {
         return validationError('variance_reason is invalid.', 'VARIANCE_REASON_REQUIRED');
     }
     const varianceReasonText = normalizeOptionalText(payload.variance_reason_text, {
@@ -420,12 +414,16 @@ const validateDraftPayload = (payload, {
         maxLength: config.varianceReasonTextMaxLength
     });
     if (!varianceReasonText.valid) return varianceReasonText;
-    if (!varianceReason && varianceReasonText.value) {
+    if (variance.variance_required && !requestedVarianceReason && varianceReasonText.value) {
         return validationError(
             'variance_reason is required when variance_reason_text is provided.',
             'VARIANCE_REASON_REQUIRED'
         );
     }
+    const varianceReason = variance.variance_required ? requestedVarianceReason : null;
+    const canonicalVarianceReasonText = variance.variance_required
+        ? varianceReasonText.value
+        : null;
 
     return {
         valid: true,
@@ -437,14 +435,14 @@ const validateDraftPayload = (payload, {
             estimated_duration_minutes: duration.value,
             warranty_days: warranty.value,
             subtotal_amount: itemsResult.subtotal.toString(),
-            discount_amount: discountResult.value.toString(),
+            discount_amount: '0',
             total_amount: total.toString(),
             currency: 'VND',
             bid_reference_amount: variance.bid_reference_amount,
             variance_amount: variance.variance_amount,
             variance_percent: variance.variance_percent,
             variance_reason: varianceReason,
-            variance_reason_text: varianceReasonText.value
+            variance_reason_text: canonicalVarianceReasonText
         },
         items: itemsResult.items,
         varianceRequired: variance.variance_required,
@@ -452,7 +450,7 @@ const validateDraftPayload = (payload, {
     };
 };
 
-const buildSubmitReadiness = ({ normalized, evidenceCount }) => {
+const buildSubmitReadiness = ({ normalized, evidenceCount, heldDepositAmount }) => {
     const missing = [];
     if (!normalized?.data?.problem_summary) missing.push('PROBLEM_SUMMARY_REQUIRED');
     if (!normalized?.data?.recommended_solution) missing.push('RECOMMENDED_SOLUTION_REQUIRED');
@@ -462,6 +460,12 @@ const buildSubmitReadiness = ({ normalized, evidenceCount }) => {
     if (normalized?.data?.warranty_days === null) missing.push('WARRANTY_DAYS_REQUIRED');
     if (!normalized?.items?.length) missing.push('QUOTE_ITEMS_REQUIRED');
     if (!normalized || normalized.total <= 0n) missing.push('INVALID_QUOTE_AMOUNT');
+    const heldDeposit = parseVndInteger(heldDepositAmount, 'held deposit');
+    if (!heldDeposit.valid || heldDeposit.value <= 0n) {
+        missing.push('ACCEPTED_DATA_INCONSISTENT');
+    } else if (normalized?.total < heldDeposit.value) {
+        missing.push('QUOTE_TOTAL_BELOW_HELD_DEPOSIT');
+    }
     if (!Number.isInteger(evidenceCount) || evidenceCount < 1) {
         missing.push('BEFORE_EVIDENCE_REQUIRED');
     }
@@ -476,7 +480,8 @@ const buildSubmitReadiness = ({ normalized, evidenceCount }) => {
         ready: missing.length === 0,
         missing_requirements: missing,
         before_evidence_count: Number.isInteger(evidenceCount) ? evidenceCount : 0,
-        variance_reason_required: Boolean(normalized?.varianceRequired)
+        variance_reason_required: Boolean(normalized?.varianceRequired),
+        minimum_quote_total_amount: heldDeposit.valid ? heldDeposit.value.toString() : null
     };
 };
 
@@ -487,10 +492,9 @@ const normalizeStoredQuote = (quote, items, bidReferenceAmount) => {
         inspection_notes: quote.inspection_notes,
         recommended_solution: quote.recommended_solution,
         estimated_duration_minutes: quote.estimated_duration_minutes,
-        warranty_days: quote.warranty_days,
-        discount_amount: quote.discount_amount,
         items: (items || []).map((item) => ({
             item_type: item.item_type,
+            name: item.name,
             description: item.description,
             quantity: item.quantity,
             unit: item.unit,
@@ -500,6 +504,7 @@ const normalizeStoredQuote = (quote, items, bidReferenceAmount) => {
         variance_reason_text: quote.variance_reason_text
     }, {
         bidReferenceAmount,
+        warrantyDays: quote.warranty_days,
         requireExpectedRevision: false
     });
 };

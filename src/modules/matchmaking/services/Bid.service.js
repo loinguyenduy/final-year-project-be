@@ -6,6 +6,24 @@ import Service from '../models/Service.model.js';
 import Province from '../models/Province.model.js';
 import Ward from '../models/Ward.model.js';
 import db from '../../../core/database/connection.js';
+import {
+    JOB_LIFECYCLE_EVENTS,
+    emitJobLifecycleEvent
+} from '../sockets/JobLifecycle.gateway.js';
+
+const emitBidEvent = ({ event, job, bid, previousStatus = null }) => emitJobLifecycleEvent({
+    event,
+    userIds: [job.customer_id],
+    payload: {
+        job_id: job.id,
+        bid_id: bid.id,
+        handyman_id: bid.handyman_id,
+        previous_status: previousStatus,
+        current_status: job.current_status,
+        acceptance_cycle: Number(job.acceptance_cycle || 0),
+        occurred_at: new Date()
+    }
+});
 
 const serializeBid = (bid) => ({
     id: bid.id,
@@ -43,6 +61,7 @@ const submitBidService = async (handymanId, jobId, bidData) => {
             await t.rollback();
             return { EM: "This job is no longer accepting bids.", EC: 400, DT: "" };
         }
+        const originalJobStatus = job.current_status;
 
         // Prevent customer from bidding on their own job
         if (job.customer_id === handymanId) {
@@ -112,6 +131,12 @@ const submitBidService = async (handymanId, jobId, bidData) => {
             }
 
             await t.commit();
+            emitBidEvent({
+                event: JOB_LIFECYCLE_EVENTS.BID_SUBMITTED,
+                job,
+                bid: customerCancelledBid,
+                previousStatus: originalJobStatus
+            });
             return {
                 EM: 'Customer-cancelled bid reactivated successfully.',
                 EC: 0,
@@ -141,6 +166,12 @@ const submitBidService = async (handymanId, jobId, bidData) => {
         }
 
         await t.commit();
+        emitBidEvent({
+            event: JOB_LIFECYCLE_EVENTS.BID_SUBMITTED,
+            job,
+            bid: newBid,
+            previousStatus: originalJobStatus
+        });
         return {
             EM: "Bid submitted successfully.",
             EC: 0,
@@ -148,35 +179,45 @@ const submitBidService = async (handymanId, jobId, bidData) => {
             HTTP_STATUS: 201
         };
     } catch (error) {
-        await t.rollback();
+        if (!t.finished) await t.rollback();
         console.log(">>> Error in submitBidService: ", error);
         return { EM: "Internal server error while submitting bid.", EC: 500, DT: "" };
     }
 };
 
 const updateBidService = async (handymanId, jobId, bidId, bidData) => {
+    const t = await db.transaction();
     try {
         const { proposed_price, message, eta, estimated_duration_hours } = bidData;
 
+        const job = await Job.findByPk(jobId, {
+            transaction: t,
+            lock: t.LOCK.UPDATE
+        });
+        if (!job) {
+            await t.rollback();
+            return { EM: "Job not found.", EC: 404, DT: "" };
+        }
         const bid = await Bid.findOne({
-            where: { id: bidId, handyman_id: handymanId, job_id: jobId }
+            where: { id: bidId, handyman_id: handymanId, job_id: jobId },
+            transaction: t,
+            lock: t.LOCK.UPDATE
         });
         if (!bid) {
+            await t.rollback();
             return { EM: "Bid not found or you do not have permission to update it.", EC: 404, DT: "" };
         }
         if (bid.status !== 'PENDING') {
+            await t.rollback();
             return { EM: "Cannot update a bid that is no longer pending.", EC: 400, DT: "" };
         }
-
-        const job = await Job.findByPk(jobId);
-        if (!job) {
-            return { EM: "Job not found.", EC: 404, DT: "" };
-        }
         if (!['POSTED', 'BIDDING'].includes(job.current_status)) {
+            await t.rollback();
             return { EM: "Cannot update bid — the job is no longer open for bidding.", EC: 400, DT: "" };
         }
 
         if (proposed_price !== undefined && (isNaN(Number(proposed_price)) || Number(proposed_price) <= 0)) {
+            await t.rollback();
             return { EM: "Proposed price must be a positive number.", EC: 400, DT: "" };
         }
 
@@ -186,9 +227,12 @@ const updateBidService = async (handymanId, jobId, bidId, bidData) => {
         if (eta !== undefined) updatePayload.eta = eta ? new Date(eta) : null;
         if (estimated_duration_hours !== undefined) updatePayload.estimated_duration_hours = estimated_duration_hours ? Number(estimated_duration_hours) : null;
 
-        await bid.update(updatePayload);
+        await bid.update(updatePayload, { transaction: t });
+        await t.commit();
+        emitBidEvent({ event: JOB_LIFECYCLE_EVENTS.BID_UPDATED, job, bid });
         return { EM: "Bid updated successfully.", EC: 0, DT: bid };
     } catch (error) {
+        if (!t.finished) await t.rollback();
         console.log(">>> Error in updateBidService: ", error);
         return { EM: "Internal server error while updating bid.", EC: 500, DT: "" };
     }
@@ -197,9 +241,18 @@ const updateBidService = async (handymanId, jobId, bidId, bidData) => {
 const withdrawBidService = async (handymanId, jobId, bidId) => {
     const t = await db.transaction();
     try {
+        const job = await Job.findByPk(jobId, {
+            transaction: t,
+            lock: t.LOCK.UPDATE
+        });
+        if (!job) {
+            await t.rollback();
+            return { EM: "Job not found.", EC: 404, DT: "" };
+        }
         const bid = await Bid.findOne({
             where: { id: bidId, handyman_id: handymanId, job_id: jobId },
-            transaction: t
+            transaction: t,
+            lock: t.LOCK.UPDATE
         });
         if (!bid) {
             await t.rollback();
@@ -208,15 +261,6 @@ const withdrawBidService = async (handymanId, jobId, bidId) => {
         if (bid.status !== 'PENDING') {
             await t.rollback();
             return { EM: "Cannot withdraw a bid that is not pending.", EC: 400, DT: "" };
-        }
-
-        const job = await Job.findByPk(jobId, {
-            transaction: t,
-            lock: t.LOCK.UPDATE
-        });
-        if (!job) {
-            await t.rollback();
-            return { EM: "Job not found.", EC: 404, DT: "" };
         }
         if (!['POSTED', 'BIDDING'].includes(job.current_status)) {
             await t.rollback();
@@ -247,9 +291,10 @@ const withdrawBidService = async (handymanId, jobId, bidId) => {
         }
 
         await t.commit();
+        emitBidEvent({ event: JOB_LIFECYCLE_EVENTS.BID_WITHDRAWN, job, bid });
         return { EM: "Bid withdrawn successfully.", EC: 0, DT: "" };
     } catch (error) {
-        await t.rollback();
+        if (!t.finished) await t.rollback();
         console.log(">>> Error in withdrawBidService: ", error);
         return { EM: "Internal server error while withdrawing bid.", EC: 500, DT: "" };
     }

@@ -1,3 +1,6 @@
+> Superseded for the current Quote/Contract public contract. Use
+> `manual-quote-policy-rollout.md` and the frontend end-to-end manual instead.
+
 # Hướng dẫn kiểm thử thủ công Quote Response → Payment → Contract → In Progress
 
 ## 1. Mục tiêu và dữ liệu chuẩn bị

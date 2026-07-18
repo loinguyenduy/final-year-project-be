@@ -456,7 +456,11 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
         const quoteReadiness = !currentQuote
             ? null
             : normalizedQuote.valid
-                ? buildSubmitReadiness({ normalized: normalizedQuote, evidenceCount: beforeEvidenceCount })
+                ? buildSubmitReadiness({
+                    normalized: normalizedQuote,
+                    evidenceCount: beforeEvidenceCount,
+                    heldDepositAmount: job.deposit_amount
+                })
                 : {
                     ready: false,
                     missing_requirements: ['INVALID_DRAFT_DATA'],

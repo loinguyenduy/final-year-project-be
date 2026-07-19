@@ -13,7 +13,10 @@ const EvidenceVault = db.define('Evidence_Vault', {
     handyman_id: { type: DataTypes.UUID, allowNull: true },
     selected_bid_id: { type: DataTypes.UUID, allowNull: true },
     uploader_id: { type: DataTypes.UUID, allowNull: true },
-    stage: { type: DataTypes.ENUM('BEFORE', 'DURING', 'AFTER'), allowNull: false },
+    stage: {
+        type: DataTypes.ENUM('BEFORE', 'DURING', 'AFTER', 'WARRANTY_CLAIM', 'WARRANTY'),
+        allowNull: false
+    },
     media_type: {
         type: DataTypes.ENUM('IMAGE'),
         allowNull: true
@@ -36,6 +39,10 @@ const EvidenceVault = db.define('Evidence_Vault', {
         {
             name: 'evidence_vaults_job_cycle_stage',
             fields: ['job_id', 'acceptance_cycle', 'stage']
+        },
+        {
+            name: 'evidence_vaults_job_cycle_stage_uploader',
+            fields: ['job_id', 'acceptance_cycle', 'stage', 'uploader_id']
         }
     ]
 });

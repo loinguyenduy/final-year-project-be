@@ -64,7 +64,7 @@ const validateLockedConversationAccess = async ({
   assertConversationMembership(conversation, userId);
 
   if (conversation.status === CONVERSATION_STATUSES.CLOSED) {
-    if (!allowClosed || job.current_status !== 'CANCELLED') {
+    if (!allowClosed || !['CANCELLED', 'CLOSED'].includes(job.current_status)) {
       throw chatError('Conversation is closed.', 409, 'CONVERSATION_CLOSED', {
         reason: conversation.closed_reason,
         closed_at: conversation.closed_at
@@ -83,7 +83,7 @@ const validateLockedConversationAccess = async ({
 
   const reconciliation = await reconcileConversationWithJob(conversation, job, { transaction });
   if (reconciliation.changed || !isChatAllowedJobStatus(job.current_status)) {
-    if (allowClosed && job.current_status === 'CANCELLED') {
+    if (allowClosed && ['CANCELLED', 'CLOSED'].includes(job.current_status)) {
       assertConversationMatchesJob(conversation, job);
       const participants = await loadParticipants(conversation, { transaction });
       const currentUser = userId === conversation.customer_id

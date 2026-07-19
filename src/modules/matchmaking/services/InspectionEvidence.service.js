@@ -320,7 +320,9 @@ const listBeforeEvidenceService = async (jobId, currentUser) => {
         const currentQuote = await findCurrentQuote(job);
         const customerVisibleQuoteStatuses = ['SUBMITTED', 'ACCEPTED', 'REJECTED'];
         if (isCustomer
-            && (!currentQuote || !customerVisibleQuoteStatuses.includes(currentQuote.status))) {
+            && (['IN_PROGRESS', 'WARRANTY', 'CLOSED'].includes(job.current_status)
+                || !currentQuote
+                || !customerVisibleQuoteStatuses.includes(currentQuote.status))) {
             return serviceError('Evidence not found.', 404, 'EVIDENCE_NOT_FOUND');
         }
         const evidence = await EvidenceVault.findAll({

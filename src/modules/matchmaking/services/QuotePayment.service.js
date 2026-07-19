@@ -220,6 +220,17 @@ const payRemainingAmountService = async (jobId, currentUser, payload = {}) => {
                 serviceError(normalized.message, 409, normalized.code)
             );
         }
+        if (!Number.isInteger(normalized.data.warranty_days)
+            || normalized.data.warranty_days <= 0) {
+            return rollbackWith(
+                transaction,
+                serviceError(
+                    'The accepted Quote must provide at least one Warranty day before a Contract can be created.',
+                    409,
+                    'WARRANTY_POLICY_INCONSISTENT'
+                )
+            );
+        }
         const amounts = calculateQuotePaymentAmounts({
             quoteTotalAmount: normalized.total,
             jobDepositAmount: job.deposit_amount,

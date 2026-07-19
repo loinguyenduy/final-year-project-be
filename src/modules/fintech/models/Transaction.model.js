@@ -17,9 +17,9 @@ const Transaction = db.define('Transaction', {
             'WITHDRAW',
             'DEPOSIT_10',
             'LOCK_100',
-            'PLATFORM_FEE_10',
-            'WARRANTY_HOLD_20',
-            'DISBURSE_80',
+            'PLATFORM_SERVICE_FEE',
+            'WARRANTY_RESERVE_HOLD',
+            'HANDYMAN_PARTIAL_RELEASE',
             'WARRANTY_RELEASE',
             'REFUND',
             'DEPOSIT_REFUND',
@@ -72,6 +72,18 @@ const Transaction = db.define('Transaction', {
         type: DataTypes.UUID,
         allowNull: true
     },
+    completion_request_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    warranty_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
+    warranty_completion_request_id: {
+        type: DataTypes.UUID,
+        allowNull: true
+    },
     idempotency_key: {
         type: DataTypes.STRING(160),
         allowNull: true
@@ -117,6 +129,14 @@ const Transaction = db.define('Transaction', {
         {
             name: 'transactions_cancellation_type',
             fields: ['cancellation_id', 'transaction_type']
+        },
+        {
+            name: 'transactions_completion_request_type',
+            fields: ['completion_request_id', 'transaction_type']
+        },
+        {
+            name: 'transactions_warranty_type',
+            fields: ['warranty_id', 'transaction_type']
         },
         {
             name: 'transactions_one_successful_remaining_payment_per_quote',

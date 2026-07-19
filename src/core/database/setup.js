@@ -18,6 +18,13 @@ import JobCancellation from '../../modules/matchmaking/models/JobCancellation.mo
 import JobArrivalRequest from '../../modules/matchmaking/models/JobArrivalRequest.model.js';
 import JobQuote from '../../modules/matchmaking/models/JobQuote.model.js';
 import JobQuoteItem from '../../modules/matchmaking/models/JobQuoteItem.model.js';
+import JobCompletionRequest from '../../modules/matchmaking/models/JobCompletionRequest.model.js';
+import JobCompletionRequestEvidence from '../../modules/matchmaking/models/JobCompletionRequestEvidence.model.js';
+import JobWarranty from '../../modules/matchmaking/models/JobWarranty.model.js';
+import WarrantyClaim from '../../modules/matchmaking/models/WarrantyClaim.model.js';
+import WarrantyClaimEvidence from '../../modules/matchmaking/models/WarrantyClaimEvidence.model.js';
+import WarrantyCompletionRequest from '../../modules/matchmaking/models/WarrantyCompletionRequest.model.js';
+import WarrantyCompletionRequestEvidence from '../../modules/matchmaking/models/WarrantyCompletionRequestEvidence.model.js';
 import HandymanService from '../../modules/matchmaking/models/HandymanService.model.js';
 import HandymanServiceArea from '../../modules/matchmaking/models/HandymanServiceArea.model.js';
 
@@ -278,7 +285,105 @@ EContract.belongsTo(Transaction, {
     foreignKey: 'remaining_payment_transaction_id'
 });
 
-// G. DISPUTE & REVIEWS
+// G. COMPLETION AND WARRANTY
+Job.hasMany(JobCompletionRequest, { as: 'CompletionRequests', foreignKey: 'job_id' });
+JobCompletionRequest.belongsTo(Job, { foreignKey: 'job_id' });
+
+User.hasMany(JobCompletionRequest, { as: 'CustomerCompletionRequests', foreignKey: 'customer_id' });
+JobCompletionRequest.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+User.hasMany(JobCompletionRequest, { as: 'HandymanCompletionRequests', foreignKey: 'handyman_id' });
+JobCompletionRequest.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+User.hasMany(JobCompletionRequest, { as: 'RespondedCompletionRequests', foreignKey: 'responded_by_user_id' });
+JobCompletionRequest.belongsTo(User, { as: 'RespondedBy', foreignKey: 'responded_by_user_id' });
+
+JobCompletionRequest.hasMany(JobCompletionRequestEvidence, {
+    as: 'EvidenceSnapshots',
+    foreignKey: 'completion_request_id',
+    onDelete: 'CASCADE'
+});
+JobCompletionRequestEvidence.belongsTo(JobCompletionRequest, { foreignKey: 'completion_request_id' });
+EvidenceVault.hasMany(JobCompletionRequestEvidence, { foreignKey: 'evidence_id' });
+JobCompletionRequestEvidence.belongsTo(EvidenceVault, { as: 'Evidence', foreignKey: 'evidence_id' });
+
+Job.hasMany(JobWarranty, { as: 'Warranties', foreignKey: 'job_id' });
+JobWarranty.belongsTo(Job, { foreignKey: 'job_id' });
+JobQuote.hasMany(JobWarranty, { as: 'Warranties', foreignKey: 'quote_id' });
+JobWarranty.belongsTo(JobQuote, { as: 'Quote', foreignKey: 'quote_id' });
+EContract.hasMany(JobWarranty, { as: 'Warranties', foreignKey: 'contract_id' });
+JobWarranty.belongsTo(EContract, { as: 'Contract', foreignKey: 'contract_id' });
+JobCompletionRequest.hasOne(JobWarranty, { as: 'Warranty', foreignKey: 'completion_request_id' });
+JobWarranty.belongsTo(JobCompletionRequest, { as: 'CompletionRequest', foreignKey: 'completion_request_id' });
+User.hasMany(JobWarranty, { as: 'CustomerWarranties', foreignKey: 'customer_id' });
+JobWarranty.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+User.hasMany(JobWarranty, { as: 'HandymanWarranties', foreignKey: 'handyman_id' });
+JobWarranty.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+Transaction.hasOne(JobWarranty, { as: 'ReleasedWarranty', foreignKey: 'release_transaction_id' });
+JobWarranty.belongsTo(Transaction, { as: 'ReleaseTransaction', foreignKey: 'release_transaction_id' });
+
+Job.hasMany(WarrantyClaim, { as: 'WarrantyClaims', foreignKey: 'job_id' });
+WarrantyClaim.belongsTo(Job, { foreignKey: 'job_id' });
+JobWarranty.hasMany(WarrantyClaim, { as: 'Claims', foreignKey: 'warranty_id' });
+WarrantyClaim.belongsTo(JobWarranty, { as: 'Warranty', foreignKey: 'warranty_id' });
+User.hasMany(WarrantyClaim, { as: 'CustomerWarrantyClaims', foreignKey: 'customer_id' });
+WarrantyClaim.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+User.hasMany(WarrantyClaim, { as: 'HandymanWarrantyClaims', foreignKey: 'handyman_id' });
+WarrantyClaim.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+User.hasMany(WarrantyClaim, { as: 'ReviewedWarrantyClaims', foreignKey: 'reviewed_by_admin_id' });
+WarrantyClaim.belongsTo(User, { as: 'ReviewedByAdmin', foreignKey: 'reviewed_by_admin_id' });
+
+WarrantyClaim.hasMany(WarrantyClaimEvidence, {
+    as: 'EvidenceSnapshots',
+    foreignKey: 'claim_id',
+    onDelete: 'CASCADE'
+});
+WarrantyClaimEvidence.belongsTo(WarrantyClaim, { foreignKey: 'claim_id' });
+EvidenceVault.hasMany(WarrantyClaimEvidence, { foreignKey: 'evidence_id' });
+WarrantyClaimEvidence.belongsTo(EvidenceVault, { as: 'Evidence', foreignKey: 'evidence_id' });
+
+Job.hasMany(WarrantyCompletionRequest, { as: 'WarrantyCompletionRequests', foreignKey: 'job_id' });
+WarrantyCompletionRequest.belongsTo(Job, { foreignKey: 'job_id' });
+JobWarranty.hasMany(WarrantyCompletionRequest, {
+    as: 'CompletionRequests',
+    foreignKey: 'warranty_id'
+});
+WarrantyCompletionRequest.belongsTo(JobWarranty, { as: 'Warranty', foreignKey: 'warranty_id' });
+WarrantyClaim.hasMany(WarrantyCompletionRequest, {
+    as: 'CompletionRequests',
+    foreignKey: 'claim_id'
+});
+WarrantyCompletionRequest.belongsTo(WarrantyClaim, { as: 'Claim', foreignKey: 'claim_id' });
+User.hasMany(WarrantyCompletionRequest, { as: 'CustomerWarrantyCompletionRequests', foreignKey: 'customer_id' });
+WarrantyCompletionRequest.belongsTo(User, { as: 'Customer', foreignKey: 'customer_id' });
+User.hasMany(WarrantyCompletionRequest, { as: 'HandymanWarrantyCompletionRequests', foreignKey: 'handyman_id' });
+WarrantyCompletionRequest.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
+User.hasMany(WarrantyCompletionRequest, { as: 'RespondedWarrantyCompletionRequests', foreignKey: 'responded_by_user_id' });
+WarrantyCompletionRequest.belongsTo(User, { as: 'RespondedBy', foreignKey: 'responded_by_user_id' });
+
+WarrantyCompletionRequest.hasMany(WarrantyCompletionRequestEvidence, {
+    as: 'EvidenceSnapshots',
+    foreignKey: 'warranty_completion_request_id',
+    onDelete: 'CASCADE'
+});
+WarrantyCompletionRequestEvidence.belongsTo(WarrantyCompletionRequest, {
+    foreignKey: 'warranty_completion_request_id'
+});
+EvidenceVault.hasMany(WarrantyCompletionRequestEvidence, { foreignKey: 'evidence_id' });
+WarrantyCompletionRequestEvidence.belongsTo(EvidenceVault, { as: 'Evidence', foreignKey: 'evidence_id' });
+
+JobCompletionRequest.hasMany(Transaction, { as: 'SettlementTransactions', foreignKey: 'completion_request_id' });
+Transaction.belongsTo(JobCompletionRequest, { as: 'CompletionRequest', foreignKey: 'completion_request_id' });
+JobWarranty.hasMany(Transaction, { as: 'Transactions', foreignKey: 'warranty_id' });
+Transaction.belongsTo(JobWarranty, { as: 'Warranty', foreignKey: 'warranty_id' });
+WarrantyCompletionRequest.hasMany(Transaction, {
+    as: 'SettlementTransactions',
+    foreignKey: 'warranty_completion_request_id'
+});
+Transaction.belongsTo(WarrantyCompletionRequest, {
+    as: 'WarrantyCompletionRequest',
+    foreignKey: 'warranty_completion_request_id'
+});
+
+// H. DISPUTE & REVIEWS
 Job.hasMany(Review, { foreignKey: 'job_id' });
 Review.belongsTo(Job, { foreignKey: 'job_id' });
 const verifyChatIndexes = async () => {
@@ -366,6 +471,15 @@ const reportIndexSyncFailure = (error) => {
         console.error(
             '[fintech] ERROR: DB_SYNC_ALTER could not create the required remaining-payment '
             + 'or service-contract indexes. Resolve duplicate rows before restarting.'
+        );
+    }
+    if (errorText.includes('completion_requests_one_pending_per_cycle')
+        || errorText.includes('job_warranties_job_cycle_unique')
+        || errorText.includes('warranty_claims_one_active_per_warranty')
+        || errorText.includes('warranty_completion_requests_one_pending')) {
+        console.error(
+            '[matchmaking] ERROR: DB_SYNC_ALTER could not create Completion/Warranty indexes. '
+            + 'Resolve duplicate pending requests, warranties, or active claims before restarting.'
         );
     }
 };
@@ -562,6 +676,87 @@ const verifyQuotePaymentIndexes = async () => {
     console.log('Quote payment and service-contract indexes verified successfully.');
 };
 
+const verifyCompletionWarrantySchema = async () => {
+    const requiredIndexes = [
+        'completion_requests_job_cycle_sequence_unique',
+        'completion_requests_one_pending_per_cycle',
+        'completion_request_evidence_unique',
+        'job_warranties_job_cycle_unique',
+        'job_warranties_completion_request_unique',
+        'job_warranties_release_transaction_unique',
+        'warranty_claims_one_active_per_warranty',
+        'warranty_claim_evidence_unique',
+        'warranty_claim_evidence_one_claim_per_evidence',
+        'warranty_completion_requests_sequence_unique',
+        'warranty_completion_requests_one_pending',
+        'warranty_completion_request_evidence_unique',
+        'warranty_completion_evidence_one_request_per_evidence'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const byName = new Map(indexes.map((index) => [index.indexname, String(index.indexdef)]));
+    const missing = requiredIndexes.filter((name) => !byName.get(name)?.includes('UNIQUE'));
+    if (missing.length > 0) {
+        throw new Error(
+            `Required Completion/Warranty unique indexes are missing: ${missing.join(', ')}. `
+            + 'Run once with DB_SYNC_ALTER=true after backing up the database.'
+        );
+    }
+    for (const partialName of [
+        'completion_requests_one_pending_per_cycle',
+        'job_warranties_release_transaction_unique',
+        'warranty_claims_one_active_per_warranty',
+        'warranty_completion_requests_one_pending'
+    ]) {
+        if (!byName.get(partialName)?.includes('WHERE')) {
+            throw new Error(`Required partial unique index ${partialName} is invalid.`);
+        }
+    }
+
+    const [transactionColumns] = await db.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Transactions'
+          AND column_name IN (
+            'completion_request_id',
+            'warranty_id',
+            'warranty_completion_request_id'
+          )
+    `);
+    if (transactionColumns.length !== 3) {
+        throw new Error(
+            'Required Completion/Warranty Transaction references are missing. '
+            + 'Run once with DB_SYNC_ALTER=true.'
+        );
+    }
+
+    const [transactionLabels] = await db.query(`
+        SELECT e.enumlabel
+        FROM pg_type t
+        JOIN pg_enum e ON e.enumtypid = t.oid
+        WHERE t.typname = 'enum_Transactions_transaction_type'
+    `);
+    const labels = new Set(transactionLabels.map((row) => row.enumlabel));
+    const requiredLabels = [
+        'HANDYMAN_PARTIAL_RELEASE',
+        'PLATFORM_SERVICE_FEE',
+        'WARRANTY_RESERVE_HOLD',
+        'WARRANTY_RELEASE'
+    ];
+    const missingLabels = requiredLabels.filter((label) => !labels.has(label));
+    if (missingLabels.length > 0) {
+        throw new Error(
+            `Required Completion/Warranty Transaction enum labels are missing: ${missingLabels.join(', ')}.`
+        );
+    }
+    console.log('Completion and Warranty schema verified successfully.');
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -591,6 +786,7 @@ const initDatabase = async () => {
         await verifyJobQuoteIndexes();
         await verifyCancellationIndexes();
         await verifyQuotePaymentIndexes();
+        await verifyCompletionWarrantySchema();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

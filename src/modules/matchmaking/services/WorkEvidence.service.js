@@ -147,9 +147,6 @@ const validateWritableContext = async ({ job, stage, userId, transaction = null 
     if (job.selected_handyman_id !== userId) {
         return { error: serviceError('Only the selected handyman can manage Warranty evidence.', 403, 'NOT_SELECTED_HANDYMAN') };
     }
-    if (warranty.status !== 'REWORK_REQUIRED') {
-        return { error: serviceError('Warranty rework is not required.', 409, 'WARRANTY_REWORK_NOT_REQUIRED') };
-    }
     const claim = await WarrantyClaim.findOne({
         where: {
             warranty_id: warranty.id,
@@ -157,8 +154,31 @@ const validateWritableContext = async ({ job, stage, userId, transaction = null 
         },
         ...options
     });
+    if (warranty.status !== 'REWORK_REQUIRED') {
+        return {
+            error: claim
+                ? serviceError(
+                    'The Claim is approved, but the Warranty has not entered REWORK_REQUIRED.',
+                    409,
+                    'WARRANTY_STATE_INCONSISTENT',
+                    { claim_status: claim.status, warranty_status: warranty.status }
+                )
+                : serviceError(
+                    'Warranty rework is not required.',
+                    409,
+                    'WARRANTY_REWORK_NOT_REQUIRED',
+                    { warranty_status: warranty.status }
+                )
+        };
+    }
     if (!claim) {
-        return { error: serviceError('Approved rework Claim not found.', 409, 'WARRANTY_REWORK_NOT_REQUIRED') };
+        return {
+            error: serviceError(
+                'The Warranty and Claim approval states are inconsistent.',
+                409,
+                'WARRANTY_STATE_INCONSISTENT'
+            )
+        };
     }
     return { warranty, claim };
 };

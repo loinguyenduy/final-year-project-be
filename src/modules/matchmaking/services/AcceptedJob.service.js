@@ -312,6 +312,7 @@ const buildWarrantyDto = (warranty, lifecycle = {}, visibility = {}) => warranty
         ...(visibility.isSelectedHandyman || visibility.includeAdmin ? {
             warranty_evidence_count: lifecycle.reworkEvidenceCount || 0,
             ready_to_request_rework_completion: warranty.status === 'REWORK_REQUIRED'
+                && lifecycle.latestClaim?.status === 'APPROVED_REWORK_REQUIRED'
                 && (lifecycle.reworkEvidenceCount || 0) > 0
         } : {})
     }
@@ -529,6 +530,9 @@ const buildAllowedActions = ({
         if (warranty.status === 'REWORK_REQUIRED') {
             if (isCustomer) return ['WAIT_WARRANTY_REWORK_COMPLETION'];
             if (!isSelectedHandyman) return [];
+            if (warrantyLifecycle.latestClaim?.status !== 'APPROVED_REWORK_REQUIRED') {
+                return ['WAIT_WARRANTY_REVIEW'];
+            }
             const actions = [];
             if ((warrantyLifecycle.reworkEvidenceCount || 0) < getEvidenceConfig().maxFilesPerStage) {
                 actions.push('UPLOAD_WARRANTY_EVIDENCE');

@@ -310,19 +310,9 @@ const listBeforeEvidenceService = async (jobId, currentUser) => {
         if (!job) return serviceError('Job not found.', 404, 'JOB_NOT_FOUND');
 
         const isAdmin = currentUser.role === 'ADMIN';
-        const isCustomer = currentUser.role === 'CUSTOMER' && job.customer_id === currentUser.id;
         const isSelectedHandyman = currentUser.role === 'HANDYMAN'
             && job.selected_handyman_id === currentUser.id;
-        if (!isAdmin && !isCustomer && !isSelectedHandyman) {
-            return serviceError('Evidence not found.', 404, 'EVIDENCE_NOT_FOUND');
-        }
-
-        const currentQuote = await findCurrentQuote(job);
-        const customerVisibleQuoteStatuses = ['SUBMITTED', 'ACCEPTED', 'REJECTED'];
-        if (isCustomer
-            && (['IN_PROGRESS', 'WARRANTY', 'CLOSED'].includes(job.current_status)
-                || !currentQuote
-                || !customerVisibleQuoteStatuses.includes(currentQuote.status))) {
+        if (!isAdmin && !isSelectedHandyman) {
             return serviceError('Evidence not found.', 404, 'EVIDENCE_NOT_FOUND');
         }
         const evidence = await EvidenceVault.findAll({

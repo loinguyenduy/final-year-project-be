@@ -210,7 +210,7 @@ router.post(
 router.get(
     '/jobs/:jobId/evidence/before',
     checkUserJWT,
-    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    checkUserRole(['HANDYMAN', 'ADMIN']),
     handleListBeforeEvidence
 );
 router.delete(

@@ -92,7 +92,13 @@ const createWarrantyCompletionRequestService = async (jobId, handymanId, payload
             transaction,
             lock: transaction.LOCK.UPDATE
         });
-        if (!claim) return rollbackWith(transaction, serviceError('Approved rework Claim not found.', 409, 'WARRANTY_REWORK_NOT_REQUIRED'));
+        if (!claim) {
+            return rollbackWith(transaction, serviceError(
+                'The Warranty and Claim approval states are inconsistent.',
+                409,
+                'WARRANTY_STATE_INCONSISTENT'
+            ));
+        }
         const pending = await WarrantyCompletionRequest.findOne({
             where: { warranty_id: warranty.id, status: 'PENDING' },
             transaction,

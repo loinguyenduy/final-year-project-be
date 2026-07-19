@@ -13,6 +13,7 @@ import { isPlainObject, isValidUuid } from '../utils/chatValidation.util.js';
 import { registerChatIo } from './chat.gateway.js';
 import { authenticateSocket } from './socketAuth.middleware.js';
 import {
+  getRoleRoom,
   getUserRoom,
   registerRealtimeIo
 } from '../../../core/realtime/realtime.gateway.js';
@@ -201,13 +202,19 @@ const initializeChatSocket = (httpServer) => {
   io.use(authenticateSocket);
   io.on('connection', (socket) => {
     socket.join(getUserRoom(socket.data.user.id));
-    console.info('[chat] Socket connected.', {
+    if (socket.data.user.role === 'ADMIN') {
+      socket.join(getRoleRoom('ADMIN'));
+    }
+    console.info('[realtime] Socket connected.', {
       socket_id: socket.id,
-      user_id: socket.data.user.id
+      user_id: socket.data.user.id,
+      role: socket.data.user.role
     });
-    registerChatHandlers(socket);
+    if (['CUSTOMER', 'HANDYMAN'].includes(socket.data.user.role)) {
+      registerChatHandlers(socket);
+    }
     socket.on('disconnect', (reason) => {
-      console.info('[chat] Socket disconnected.', {
+      console.info('[realtime] Socket disconnected.', {
         socket_id: socket.id,
         user_id: socket.data.user.id,
         reason

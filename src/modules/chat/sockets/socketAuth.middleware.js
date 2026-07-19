@@ -25,8 +25,8 @@ const authenticateSocket = async (socket, next) => {
     if (!user.is_active) {
       return next(socketAuthError('User account is inactive.', 'PARTICIPANT_INACTIVE', 409));
     }
-    if (!['CUSTOMER', 'HANDYMAN'].includes(user.role)) {
-      return next(socketAuthError('Only chat participants may connect.', 'SOCKET_UNAUTHORIZED', 403));
+    if (!['CUSTOMER', 'HANDYMAN', 'ADMIN'].includes(user.role)) {
+      return next(socketAuthError('This account role may not connect to realtime services.', 'SOCKET_UNAUTHORIZED', 403));
     }
 
     socket.data.user = {

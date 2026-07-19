@@ -1,80 +1,47 @@
-import { submitCustomerKycService, submitHandymanKycService } from "../services/Kyc.service.js";
+import {
+  KycSubmissionError,
+  submitCustomerKycService,
+  submitHandymanKycService
+} from '../services/Kyc.service.js';
 
-const handleSubmitKyc = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const files = req.files; // req.files contains the uploaded files from Cloudinary middleware
-
-        if (!files || !files.cccd_front || !files.cccd_back || !files.portrait) {
-            return res.status(400).json({
-                EM: "Please provide all required documents: CCCD Front, CCCD Back, and Portrait.",
-                EC: 1,
-                DT: ""
-            });
-        }
-
-        // Extract the URLs of the uploaded documents from Cloudinary response
-        const documentUrls = {
-            cccd_front: files.cccd_front[0].path,
-            cccd_back: files.cccd_back[0].path,
-            portrait: files.portrait[0].path
-        };
-
-        const result = await submitCustomerKycService(userId, documentUrls);
-
-        return res.status(200).json({
-            EM: result.EM,
-            EC: result.EC,
-            DT: result.DT
-        });
-
-    } catch (error) {
-        console.log(">>> Error in handleSubmitKyc controller: ", error);
-        return res.status(500).json({
-            EM: "Internal server error.",
-            EC: 500,
-            DT: ""
-        });
+const handleSubmission = (service, successMessage) => async (req, res) => {
+  try {
+    const data = await service(req.user.id, req.files, req.correlationId);
+    return res.status(201).json({
+      EM: successMessage,
+      EC: 0,
+      code: 'KYC_SUBMITTED',
+      DT: data
+    });
+  } catch (error) {
+    if (error instanceof KycSubmissionError) {
+      return res.status(error.status).json({
+        EM: error.message,
+        EC: error.status,
+        code: error.code,
+        DT: ''
+      });
     }
+    console.error('[kyc] Unexpected controller error.', {
+      correlation_id: req.correlationId,
+      error: error.message
+    });
+    return res.status(500).json({
+      EM: 'Internal server error.',
+      EC: 500,
+      code: 'INTERNAL_SERVER_ERROR',
+      DT: ''
+    });
+  }
 };
 
-const handleHandymanKyc = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const files = req.files; 
-
-        if (!files || !files.cccd_front || !files.cccd_back || !files.portrait || !files.cv || !files.certificate) {
-            return res.status(400).json({
-                EM: "Missing documents. Please provide CCCD (Front/Back), Portrait, CV, and Certificate.",
-                EC: 1,
-                DT: ""
-            });
-        }
-
-        const documentUrls = {
-            cccd_front: files.cccd_front[0].path,
-            cccd_back: files.cccd_back[0].path,
-            portrait: files.portrait[0].path,
-            cv: files.cv[0].path,
-            certificate: files.certificate[0].path
-        };
-
-        const result = await submitHandymanKycService(userId, documentUrls);
-
-        return res.status(200).json({
-            EM: result.EM,
-            EC: result.EC,
-            DT: result.DT
-        });
-
-    } catch (error) {
-        console.log(">>> Error in handleHandymanKyc controller: ", error);
-        return res.status(500).json({
-            EM: "Internal server error.",
-            EC: 500,
-            DT: ""
-        });
-    }
-};
+const handleSubmitKyc = handleSubmission(
+  submitCustomerKycService,
+  'KYC documents submitted successfully.'
+);
+const handleHandymanKyc = handleSubmission(
+  submitHandymanKycService,
+  'Handyman KYC documents submitted successfully.'
+);
 
 export { handleSubmitKyc, handleHandymanKyc };

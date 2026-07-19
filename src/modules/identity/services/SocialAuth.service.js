@@ -4,6 +4,7 @@ import AuthProvider from "../models/AuthProvider.model.js";
 import RefreshToken from "../models/RefreshToken.model.js";
 import { createAccessToken, createRefreshToken } from "../../../core/utils/jwt.util.js";
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
+import { getRefreshCookieOptions } from '../utils/authCookie.util.js';
 
 const upsertGoogleUser = async (googleProfile) => {
   const t = await db.transaction();
@@ -15,6 +16,20 @@ const upsertGoogleUser = async (googleProfile) => {
     const providerId = googleProfile.id;
 
     let user = await User.findOne({ where: { email: email } });
+
+    if (user?.role === 'ADMIN') {
+      await t.rollback();
+      return {
+        EM: 'Administrators must sign in through the Admin Portal.',
+        EC: 403,
+        code: 'ADMIN_PORTAL_REQUIRED',
+        DT: ''
+      };
+    }
+    if (user && !user.is_active) {
+      await t.rollback();
+      return { EM: 'User account is inactive.', EC: 403, code: 'ACCOUNT_INACTIVE', DT: '' };
+    }
 
     if (!user) {
       // case 1: if user does not exist, create new user and link to Google
@@ -73,8 +88,7 @@ const upsertGoogleUser = async (googleProfile) => {
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    const expiresAt = new Date(Date.now() + getRefreshCookieOptions().maxAge);
 
     await RefreshToken.create(
       {
@@ -124,6 +138,20 @@ const upsertFacebookUser = async (facebookProfile) => {
 
     let user = await User.findOne({ where: { email: email } });
 
+    if (user?.role === 'ADMIN') {
+      await t.rollback();
+      return {
+        EM: 'Administrators must sign in through the Admin Portal.',
+        EC: 403,
+        code: 'ADMIN_PORTAL_REQUIRED',
+        DT: ''
+      };
+    }
+    if (user && !user.is_active) {
+      await t.rollback();
+      return { EM: 'User account is inactive.', EC: 403, code: 'ACCOUNT_INACTIVE', DT: '' };
+    }
+
     //case 1: if user does not exist, create new user and link to Facebook
     if (!user) {
       user = await User.create(
@@ -171,8 +199,7 @@ const upsertFacebookUser = async (facebookProfile) => {
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    const expiresAt = new Date(Date.now() + getRefreshCookieOptions().maxAge);
 
     await RefreshToken.create(
       { user_id: user.id, token: refreshToken, expires_at: expiresAt, is_revoked: false },
@@ -199,6 +226,9 @@ const upsertFacebookUser = async (facebookProfile) => {
 
 const linkGoogleProvider = async (userId, googleProfile) => {
     try {
+        const user = await User.findByPk(userId, { attributes: ['id', 'role', 'is_active'] });
+        if (!user || !user.is_active) return { EM: 'User account is unavailable.', EC: 403, code: 'ACCOUNT_INACTIVE', DT: '' };
+        if (user.role === 'ADMIN') return { EM: 'Administrators cannot link social login providers.', EC: 403, code: 'ADMIN_PORTAL_REQUIRED', DT: '' };
         const providerId = googleProfile.id;
 
         const alreadyLinkedToMe = await AuthProvider.findOne({
@@ -226,6 +256,9 @@ const linkGoogleProvider = async (userId, googleProfile) => {
 
 const linkFacebookProvider = async (userId, facebookProfile) => {
     try {
+        const user = await User.findByPk(userId, { attributes: ['id', 'role', 'is_active'] });
+        if (!user || !user.is_active) return { EM: 'User account is unavailable.', EC: 403, code: 'ACCOUNT_INACTIVE', DT: '' };
+        if (user.role === 'ADMIN') return { EM: 'Administrators cannot link social login providers.', EC: 403, code: 'ADMIN_PORTAL_REQUIRED', DT: '' };
         if (!facebookProfile.emails || facebookProfile.emails.length === 0) {
             return { EM: "Facebook account must have an email to be linked.", EC: 400, DT: "" };
         }

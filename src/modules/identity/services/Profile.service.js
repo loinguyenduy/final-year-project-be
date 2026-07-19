@@ -10,6 +10,7 @@ import Province from '../../matchmaking/models/Province.model.js';
 import Ward from '../../matchmaking/models/Ward.model.js';
 import HandymanService from '../../matchmaking/models/HandymanService.model.js';
 import HandymanServiceArea from '../../matchmaking/models/HandymanServiceArea.model.js';
+import { KYC_REJECTION_MESSAGES } from '../constants/kyc.constants.js';
 
 const VALID_WORK_TIMES = ['MORNING', 'AFTERNOON', 'EVENING', 'WEEKEND'];
 
@@ -54,7 +55,11 @@ const getDetailedProfileService = async (userId) => {
                 {
                     model: KycRequest,
                     as: 'KycDocuments',
-                    attributes: ['id', 'document_type', 'document_url', 'status', 'reviewed_at', 'createdAt']
+                    attributes: [
+                        'id', 'submission_id', 'submission_sequence', 'document_type',
+                        'status', 'rejection_reason_code', 'rejection_reason_text',
+                        'reviewed_at', 'createdAt'
+                    ]
                 },
                 {
                     model: HandymanService,
@@ -78,7 +83,20 @@ const getDetailedProfileService = async (userId) => {
             return { EM: "User profile not found.", EC: 404, DT: "" };
         }
 
-        return { EM: "Fetch user profile successfully.", EC: 0, DT: userProfile };
+        const profile = userProfile.get({ plain: true });
+        const latestDocument = [...(profile.KycDocuments || [])]
+            .filter(document => document.submission_id)
+            .sort((left, right) => (right.submission_sequence || 0) - (left.submission_sequence || 0))[0];
+        profile.kyc_rejection = profile.kyc_status === 'REJECTED' && latestDocument
+            ? {
+                reason_code: latestDocument.rejection_reason_code,
+                message: KYC_REJECTION_MESSAGES[latestDocument.rejection_reason_code]
+                    || 'The KYC submission could not be verified.',
+                reason_text: latestDocument.rejection_reason_text
+            }
+            : null;
+
+        return { EM: "Fetch user profile successfully.", EC: 0, DT: profile };
 
     } catch (error) {
         console.error(">>> Error in getDetailedProfileService: ", error);

@@ -1,7 +1,9 @@
 let realtimeIo = null;
 
 const USER_ROOM_PREFIX = 'user:';
+const ROLE_ROOM_PREFIX = 'role:';
 const getUserRoom = (userId) => `${USER_ROOM_PREFIX}${userId}`;
+const getRoleRoom = (role) => `${ROLE_ROOM_PREFIX}${String(role).toUpperCase()}`;
 
 const registerRealtimeIo = (io) => {
     realtimeIo = io;
@@ -23,8 +25,22 @@ const emitToUsers = (userIds, eventName, payload) => {
     return true;
 };
 
+const emitToRole = (role, eventName, payload) => {
+    if (!realtimeIo) {
+        console.warn('[realtime] Socket.IO is not initialized; role event was not emitted.', {
+            event: eventName,
+            role
+        });
+        return false;
+    }
+    realtimeIo.to(getRoleRoom(role)).emit(eventName, payload);
+    return true;
+};
+
 export {
+    emitToRole,
     emitToUsers,
+    getRoleRoom,
     getUserRoom,
     registerRealtimeIo
 };

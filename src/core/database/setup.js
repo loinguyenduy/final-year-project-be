@@ -7,6 +7,7 @@ import KycRequest from '../../modules/identity/models/KycRequest.model.js';
 import HandymanProfile from '../../modules/identity/models/HandymanProfile.model.js';
 import VerificationToken from '../../modules/identity/models/VerificationToken.model.js';
 import RefreshToken from '../../modules/identity/models/RefreshToken.model.js';
+import AdminAuditLog from '../../modules/admin/models/AdminAuditLog.model.js';
 
 import Province from '../../modules/matchmaking/models/Province.model.js';
 import Ward from '../../modules/matchmaking/models/Ward.model.js';
@@ -54,6 +55,17 @@ KycRequest.belongsTo(User, { as: 'Admin', foreignKey: 'reviewed_by_admin_id' });
 
 User.hasMany(RefreshToken, { foreignKey: 'user_id' });
 RefreshToken.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(AdminAuditLog, {
+    as: 'AdminAuditLogs',
+    foreignKey: 'admin_id',
+    onDelete: 'RESTRICT'
+});
+AdminAuditLog.belongsTo(User, {
+    as: 'Administrator',
+    foreignKey: 'admin_id',
+    onDelete: 'RESTRICT'
+});
 
 User.hasOne(VerificationToken, { foreignKey: 'user_id' });
 VerificationToken.belongsTo(User, { foreignKey: 'user_id' });

@@ -14,11 +14,13 @@ const extractToken = (req) => {
 const checkUserJWT = (req, res, next) => {
   try {
     const token = extractToken(req);
+    const isAdminRequest = /^\/api\/v1\/(admin(?:\/|$)|auth\/admin\/)/.test(req.originalUrl || '');
 
     if (!token) {
       return res.status(401).json({
         EM: "Not authenticated the user (Missing Token)",
         EC: 401,
+        code: isAdminRequest ? 'ADMIN_AUTH_REQUIRED' : 'AUTH_REQUIRED',
         DT: "",
       });
     }
@@ -32,6 +34,7 @@ const checkUserJWT = (req, res, next) => {
       return res.status(401).json({
         EM: "Not authenticated the user (Invalid or Expired Token)",
         EC: 401,
+        code: isAdminRequest ? 'ADMIN_SESSION_EXPIRED' : 'SESSION_EXPIRED',
         DT: "",
       });
     }
@@ -40,6 +43,7 @@ const checkUserJWT = (req, res, next) => {
     return res.status(500).json({
       EM: "Something went wrong at the gateway...",
       EC: 500,
+      code: 'INTERNAL_SERVER_ERROR',
       DT: "",
     });
   }

@@ -21,7 +21,8 @@ IN_PROGRESS
 WARRANTY
 ```
 
-Các trạng thái như `POSTED`, `BIDDING`, `PENDING_DEPOSIT`, `CANCELLED`, `CLOSED` không được chat.
+Các trạng thái như `POSTED`, `BIDDING`, `PENDING_DEPOSIT` không được chat. `CANCELLED` và
+`CLOSED` không cho gửi/join nhưng participant vẫn có thể đọc lại history ở chế độ read-only.
 
 ## 2. Acceptance cycle
 
@@ -68,7 +69,9 @@ ACTIVE
 CLOSED
 ```
 
-`CLOSED` là trạng thái vĩnh viễn của cycle đó. Không được tạo conversation thứ hai trong cùng cycle và participant không được đọc lại history của conversation đã đóng.
+`CLOSED` là trạng thái vĩnh viễn của cycle đó. Không được tạo conversation thứ hai trong cùng
+cycle. Khi Job là `CANCELLED` hoặc `CLOSED`, participant được đọc history nhưng không được
+join/send/read mutation; DTO trả `allowed_actions: ["HISTORY"]`.
 
 Các lý do đóng:
 
@@ -229,7 +232,9 @@ Response:
 }
 ```
 
-Outsider nhận `404 CONVERSATION_NOT_FOUND`, không nhận `403`. Participant của conversation đã đóng nhận `409 CONVERSATION_CLOSED`.
+Outsider nhận `404 CONVERSATION_NOT_FOUND`, không nhận `403`. Participant của conversation
+đã đóng chỉ đọc được history khi Job là `CANCELLED` hoặc `CLOSED`; các mutation vẫn nhận
+`409 CONVERSATION_CLOSED`.
 
 ## 6. Kết nối Socket.IO
 

@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import Job from '../../matchmaking/models/Job.model.js';
 import User from '../../identity/models/User.model.js';
-import { validateAcceptedJobInvariants } from '../../matchmaking/services/AcceptedJob.service.js';
+import { validateAcceptedParticipantInvariants } from '../../matchmaking/services/AcceptedJob.service.js';
 import Conversation from '../models/Conversation.model.js';
 import Message from '../models/Message.model.js';
 import {
@@ -91,7 +91,9 @@ const buildConversationDto = async ({ conversation, partner, userId, transaction
       avatar_url: partner.avatar_url,
       role: partner.role
     },
-    allowed_actions: ['JOIN', 'SEND', 'READ', 'HISTORY']
+    allowed_actions: conversation.status === CONVERSATION_STATUSES.ACTIVE
+      ? ['JOIN', 'SEND', 'READ', 'HISTORY']
+      : ['HISTORY']
   };
 };
 
@@ -201,7 +203,7 @@ const createOrGetConversationService = async (jobId, userId) => {
       }
       throw error;
     }
-    const invariant = await validateAcceptedJobInvariants(job, { transaction });
+    const invariant = await validateAcceptedParticipantInvariants(job, { transaction });
     if (invariant.error) {
       const error = chatError(
         invariant.error.EM,

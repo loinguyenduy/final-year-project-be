@@ -62,16 +62,19 @@ const readPositiveNumber = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const beforeEvidenceMaxSizeBytes = Math.floor(
-  readPositiveNumber(process.env.BEFORE_EVIDENCE_MAX_SIZE_MB, 5) * 1024 * 1024
+const evidenceMaxSizeBytes = Math.floor(
+  readPositiveNumber(
+    process.env.JOB_EVIDENCE_MAX_SIZE_MB,
+    readPositiveNumber(process.env.BEFORE_EVIDENCE_MAX_SIZE_MB, 5)
+  ) * 1024 * 1024
 );
 
 // BEFORE evidence is buffered so the service can calculate SHA-256 before
 // uploading. Authentication still runs before this middleware at the route.
-const uploadBeforeEvidenceMiddleware = multer({
+const uploadEvidenceMiddleware = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: beforeEvidenceMaxSizeBytes,
+    fileSize: evidenceMaxSizeBytes,
     files: 1
   },
   fileFilter: (_req, file, callback) => {
@@ -84,8 +87,11 @@ const uploadBeforeEvidenceMiddleware = multer({
   }
 }).single('image');
 
+const uploadBeforeEvidenceMiddleware = uploadEvidenceMiddleware;
+
 export {
   cloudinary,
+  uploadEvidenceMiddleware,
   uploadBeforeEvidenceMiddleware,
   uploadKycMiddleware,
   uploadJobImagesMiddleware

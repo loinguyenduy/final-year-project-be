@@ -57,6 +57,38 @@ import {
     handleGetPaymentSummary,
     handlePayRemainingAmount
 } from '../controllers/QuotePayment.controller.js';
+import {
+    handleConfirmCompletionRequest,
+    handleCreateCompletionRequest,
+    handleGetCompletionRequestEvidence,
+    handleListCompletionRequests,
+    handleRejectCompletionRequest
+} from '../controllers/CompletionRequest.controller.js';
+import {
+    handleDeleteAfterEvidence,
+    handleDeleteClaimEvidence,
+    handleDeleteDuringEvidence,
+    handleDeleteWarrantyEvidence,
+    handleListAfterEvidence,
+    handleListClaimDraftEvidence,
+    handleListDuringEvidence,
+    handleListWarrantyEvidence,
+    handleUploadAfterEvidence,
+    handleUploadClaimEvidence,
+    handleUploadDuringEvidence,
+    handleUploadWarrantyEvidence
+} from '../controllers/WorkEvidence.controller.js';
+import {
+    handleConfirmWarrantyCompletionRequest,
+    handleCreateWarrantyClaim,
+    handleCreateWarrantyCompletionRequest,
+    handleGetWarranty,
+    handleGetWarrantyClaimEvidence,
+    handleGetWarrantyCompletionEvidence,
+    handleListWarrantyClaims,
+    handleListWarrantyCompletionRequests,
+    handleRejectWarrantyCompletionRequest
+} from '../controllers/Warranty.controller.js';
 
 const router = express.Router();
 
@@ -178,7 +210,7 @@ router.post(
 router.get(
     '/jobs/:jobId/evidence/before',
     checkUserJWT,
-    checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']),
+    checkUserRole(['HANDYMAN', 'ADMIN']),
     handleListBeforeEvidence
 );
 router.delete(
@@ -247,6 +279,40 @@ router.get(
 );
 
 // COMMON JOB — must come after /jobs/available to avoid param collision
+// IN-PROGRESS WORK EVIDENCE
+router.post('/jobs/:jobId/evidence/during', checkUserJWT, checkUserRole(['HANDYMAN']), handleUploadDuringEvidence);
+router.get('/jobs/:jobId/evidence/during', checkUserJWT, checkUserRole(['HANDYMAN', 'ADMIN']), handleListDuringEvidence);
+router.delete('/jobs/:jobId/evidence/during/:evidenceId', checkUserJWT, checkUserRole(['HANDYMAN']), handleDeleteDuringEvidence);
+router.post('/jobs/:jobId/evidence/after', checkUserJWT, checkUserRole(['HANDYMAN']), handleUploadAfterEvidence);
+router.get('/jobs/:jobId/evidence/after', checkUserJWT, checkUserRole(['HANDYMAN', 'ADMIN']), handleListAfterEvidence);
+router.delete('/jobs/:jobId/evidence/after/:evidenceId', checkUserJWT, checkUserRole(['HANDYMAN']), handleDeleteAfterEvidence);
+
+// STANDARD COMPLETION
+router.post('/jobs/:jobId/completion-requests', checkUserJWT, checkUserRole(['HANDYMAN']), handleCreateCompletionRequest);
+router.get('/jobs/:jobId/completion-requests', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']), handleListCompletionRequests);
+router.get('/jobs/:jobId/completion-requests/:requestId/evidence', checkUserJWT, checkUserRole(['HANDYMAN', 'ADMIN']), handleGetCompletionRequestEvidence);
+router.post('/jobs/:jobId/completion-requests/:requestId/confirm', checkUserJWT, checkUserRole(['CUSTOMER']), handleConfirmCompletionRequest);
+router.post('/jobs/:jobId/completion-requests/:requestId/reject', checkUserJWT, checkUserRole(['CUSTOMER']), handleRejectCompletionRequest);
+
+// WARRANTY AND CLAIM
+router.get('/jobs/:jobId/warranty', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']), handleGetWarranty);
+router.post('/jobs/:jobId/evidence/warranty-claim', checkUserJWT, checkUserRole(['CUSTOMER']), handleUploadClaimEvidence);
+router.get('/jobs/:jobId/evidence/warranty-claim', checkUserJWT, checkUserRole(['CUSTOMER', 'ADMIN']), handleListClaimDraftEvidence);
+router.delete('/jobs/:jobId/evidence/warranty-claim/:evidenceId', checkUserJWT, checkUserRole(['CUSTOMER']), handleDeleteClaimEvidence);
+router.post('/jobs/:jobId/warranty/claims', checkUserJWT, checkUserRole(['CUSTOMER']), handleCreateWarrantyClaim);
+router.get('/jobs/:jobId/warranty/claims', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']), handleListWarrantyClaims);
+router.get('/jobs/:jobId/warranty/claims/:claimId/evidence', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']), handleGetWarrantyClaimEvidence);
+
+// WARRANTY REWORK
+router.post('/jobs/:jobId/evidence/warranty', checkUserJWT, checkUserRole(['HANDYMAN']), handleUploadWarrantyEvidence);
+router.get('/jobs/:jobId/evidence/warranty', checkUserJWT, checkUserRole(['HANDYMAN', 'ADMIN']), handleListWarrantyEvidence);
+router.delete('/jobs/:jobId/evidence/warranty/:evidenceId', checkUserJWT, checkUserRole(['HANDYMAN']), handleDeleteWarrantyEvidence);
+router.post('/jobs/:jobId/warranty/completion-requests', checkUserJWT, checkUserRole(['HANDYMAN']), handleCreateWarrantyCompletionRequest);
+router.get('/jobs/:jobId/warranty/completion-requests', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN', 'ADMIN']), handleListWarrantyCompletionRequests);
+router.get('/jobs/:jobId/warranty/completion-requests/:requestId/evidence', checkUserJWT, checkUserRole(['HANDYMAN', 'ADMIN']), handleGetWarrantyCompletionEvidence);
+router.post('/jobs/:jobId/warranty/completion-requests/:requestId/confirm', checkUserJWT, checkUserRole(['CUSTOMER']), handleConfirmWarrantyCompletionRequest);
+router.post('/jobs/:jobId/warranty/completion-requests/:requestId/reject', checkUserJWT, checkUserRole(['CUSTOMER']), handleRejectWarrantyCompletionRequest);
+
 router.get('/jobs/:id', checkUserJWT, handleGetJobDetails);
 
 export default router;

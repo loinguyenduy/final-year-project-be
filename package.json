@@ -9,6 +9,7 @@
     "chat:backfill-cycle": "node scripts/chat/backfillAcceptanceCycle.js",
     "chat:test:manual": "node scripts/chat/manualChatTest.js",
     "admin:test:manual": "node scripts/admin/manualAdminFoundationKycTest.js",
+    "admin:review:test:manual": "node scripts/admin/manualAdminReviewCenterTest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

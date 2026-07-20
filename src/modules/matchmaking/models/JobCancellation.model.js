@@ -116,7 +116,8 @@ const JobCancellation = db.define('Job_Cancellation', {
         {
             name: 'job_cancellations_job_cycle_status',
             fields: ['job_id', 'acceptance_cycle', 'status']
-        }
+        },
+        { name: 'job_cancellations_review_queue', fields: ['status', 'requested_at', 'id'] }
     ]
 });
 

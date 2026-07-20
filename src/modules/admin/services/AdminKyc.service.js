@@ -111,7 +111,7 @@ const getKycRequestsService = async (query = {}) => {
       as: 'Owner',
       required: true,
       where: ownerWhere,
-      attributes: ['id', 'full_name', 'email', 'role']
+      attributes: ['id', 'full_name', 'email', 'role', 'avatar_url']
     }],
     group: [
       'KYC_Request.submission_id',
@@ -171,7 +171,7 @@ const getKycRequestDetailService = async (submissionId) => {
     include: [{
       model: User,
       as: 'Owner',
-      attributes: ['id', 'full_name', 'email', 'role', 'phone_number', 'kyc_status']
+      attributes: ['id', 'full_name', 'email', 'role', 'phone_number', 'avatar_url', 'kyc_status']
     }],
     order: [['document_type', 'ASC']]
   });
@@ -211,6 +211,7 @@ const getKycRequestDetailService = async (submissionId) => {
       id: document.id,
       document_type: document.document_type,
       mime_type: document.document_mime_type,
+      uploaded_at: document.createdAt,
       can_view: Boolean(document.cloudinary_public_id)
     })),
     document_count: documents.length,

@@ -331,6 +331,8 @@ User.hasMany(JobWarranty, { as: 'HandymanWarranties', foreignKey: 'handyman_id' 
 JobWarranty.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
 Transaction.hasOne(JobWarranty, { as: 'ReleasedWarranty', foreignKey: 'release_transaction_id' });
 JobWarranty.belongsTo(Transaction, { as: 'ReleaseTransaction', foreignKey: 'release_transaction_id' });
+Transaction.hasOne(JobWarranty, { as: 'RefundedWarranty', foreignKey: 'refund_transaction_id' });
+JobWarranty.belongsTo(Transaction, { as: 'RefundTransaction', foreignKey: 'refund_transaction_id' });
 
 Job.hasMany(WarrantyClaim, { as: 'WarrantyClaims', foreignKey: 'job_id' });
 WarrantyClaim.belongsTo(Job, { foreignKey: 'job_id' });
@@ -342,6 +344,8 @@ User.hasMany(WarrantyClaim, { as: 'HandymanWarrantyClaims', foreignKey: 'handyma
 WarrantyClaim.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
 User.hasMany(WarrantyClaim, { as: 'ReviewedWarrantyClaims', foreignKey: 'reviewed_by_admin_id' });
 WarrantyClaim.belongsTo(User, { as: 'ReviewedByAdmin', foreignKey: 'reviewed_by_admin_id' });
+User.hasMany(WarrantyClaim, { as: 'ResolvedWarrantyClaims', foreignKey: 'resolved_by_admin_id' });
+WarrantyClaim.belongsTo(User, { as: 'ResolvedByAdmin', foreignKey: 'resolved_by_admin_id' });
 
 WarrantyClaim.hasMany(WarrantyClaimEvidence, {
     as: 'EvidenceSnapshots',
@@ -492,6 +496,13 @@ const reportIndexSyncFailure = (error) => {
         console.error(
             '[matchmaking] ERROR: DB_SYNC_ALTER could not create Completion/Warranty indexes. '
             + 'Resolve duplicate pending requests, warranties, or active claims before restarting.'
+        );
+    }
+    if (errorText.includes('admin_audit_scoped_idempotency_unique')
+        || errorText.includes('job_warranties_refund_transaction_unique')) {
+        console.error(
+            '[admin-review] ERROR: DB_SYNC_ALTER could not create Task 2 financial/idempotency indexes. '
+            + 'Resolve conflicting data before restarting.'
         );
     }
 };
@@ -696,6 +707,7 @@ const verifyCompletionWarrantySchema = async () => {
         'job_warranties_job_cycle_unique',
         'job_warranties_completion_request_unique',
         'job_warranties_release_transaction_unique',
+        'job_warranties_refund_transaction_unique',
         'warranty_claims_one_active_per_warranty',
         'warranty_claim_evidence_unique',
         'warranty_claim_evidence_one_claim_per_evidence',
@@ -721,6 +733,7 @@ const verifyCompletionWarrantySchema = async () => {
     for (const partialName of [
         'completion_requests_one_pending_per_cycle',
         'job_warranties_release_transaction_unique',
+        'job_warranties_refund_transaction_unique',
         'warranty_claims_one_active_per_warranty',
         'warranty_completion_requests_one_pending'
     ]) {
@@ -758,7 +771,11 @@ const verifyCompletionWarrantySchema = async () => {
         'HANDYMAN_PARTIAL_RELEASE',
         'PLATFORM_SERVICE_FEE',
         'WARRANTY_RESERVE_HOLD',
-        'WARRANTY_RELEASE'
+        'WARRANTY_RELEASE',
+        'WARRANTY_REFUND',
+        'PLATFORM_FEE_10',
+        'WARRANTY_HOLD_20',
+        'DISBURSE_80'
     ];
     const missingLabels = requiredLabels.filter((label) => !labels.has(label));
     if (missingLabels.length > 0) {
@@ -767,6 +784,62 @@ const verifyCompletionWarrantySchema = async () => {
         );
     }
     console.log('Completion and Warranty schema verified successfully.');
+};
+
+const verifyAdminReviewSchema = async () => {
+    const [columns] = await db.query(`
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (
+            (table_name = 'Admin_Audit_Logs' AND column_name IN ('idempotency_key', 'request_fingerprint'))
+            OR (table_name = 'Job_Warranties' AND column_name IN ('warranty_refunded_amount', 'refunded_at', 'refund_transaction_id'))
+            OR (table_name = 'Warranty_Claims' AND column_name = 'resolved_by_admin_id')
+          )
+    `);
+    const found = new Set(columns.map((column) => `${column.table_name}.${column.column_name}`));
+    const requiredColumns = [
+        'Admin_Audit_Logs.idempotency_key',
+        'Admin_Audit_Logs.request_fingerprint',
+        'Job_Warranties.warranty_refunded_amount',
+        'Job_Warranties.refunded_at',
+        'Job_Warranties.refund_transaction_id',
+        'Warranty_Claims.resolved_by_admin_id'
+    ];
+    const missingColumns = requiredColumns.filter((column) => !found.has(column));
+    if (missingColumns.length) {
+        throw new Error(
+            `Required Admin Review columns are missing: ${missingColumns.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    const requiredIndexes = [
+        'admin_audit_scoped_idempotency_unique',
+        'job_warranties_refund_transaction_unique',
+        'warranty_claims_review_queue',
+        'warranty_completion_requests_review_queue',
+        'job_cancellations_review_queue'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const byName = new Map(indexes.map((index) => [index.indexname, String(index.indexdef)]));
+    const missingIndexes = requiredIndexes.filter((name) => !byName.has(name));
+    if (missingIndexes.length) {
+        throw new Error(
+            `Required Admin Review indexes are missing: ${missingIndexes.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    const scopedIndex = byName.get('admin_audit_scoped_idempotency_unique');
+    if (!scopedIndex.includes('UNIQUE') || !scopedIndex.includes('WHERE')
+        || ['action', 'target_type', 'target_id', 'idempotency_key'].some((field) => !scopedIndex.includes(field))) {
+        throw new Error('Admin Review scoped idempotency index is invalid.');
+    }
+    console.log('Admin Review schema verified successfully.');
 };
 
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
@@ -799,6 +872,7 @@ const initDatabase = async () => {
         await verifyCancellationIndexes();
         await verifyQuotePaymentIndexes();
         await verifyCompletionWarrantySchema();
+        await verifyAdminReviewSchema();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

@@ -296,8 +296,20 @@ const buildWarrantyDto = (warranty, lifecycle = {}, visibility = {}) => warranty
     held_amount: String(warranty.warranty_held_amount),
     released_amount: String(warranty.warranty_released_amount),
     released_at: warranty.released_at,
+    refunded_amount: String(warranty.warranty_refunded_amount || 0),
+    refunded_at: warranty.refunded_at,
+    participant_resolution: lifecycle.latestClaim?.status === 'REJECTED'
+        && warranty.status === 'COMPLETED'
+        && warranty.released_at
+        ? {
+            claim_decision: 'REJECTED',
+            warranty_resolution: 'EXPIRED_RELEASE_TO_HANDYMAN',
+            message: 'The warranty claim was not approved. The warranty period has ended, so the remaining warranty reserve has been released according to policy.'
+        }
+        : null,
     claim_window_open: warranty.status === 'ACTIVE'
         && !warranty.released_at
+        && !warranty.refunded_at
         && new Date() < new Date(warranty.ends_at),
     latest_claim: buildWarrantyClaimDto(lifecycle.latestClaim, visibility.includeAdmin),
     latest_rework_request: buildWarrantyCompletionRequestDto(lifecycle.latestReworkRequest),

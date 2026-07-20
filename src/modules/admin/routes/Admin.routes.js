@@ -7,6 +7,15 @@ import {
 } from '../controllers/AdminKyc.controller.js';
 import { listAdminAuditLogs } from '../controllers/AdminAudit.controller.js';
 import { getQueueCounts } from '../controllers/AdminQueue.controller.js';
+import {
+  decideWarrantyClaimController,
+  decideWarrantyReworkController,
+  decideCancellationController,
+  getReviewCaseDetailController,
+  getReviewChatController,
+  getReviewEvidenceAccessController,
+  listReviewCases
+} from '../controllers/AdminReview.controller.js';
 import { checkUserJWT } from '../../../core/middlewares/auth.middleware.js';
 import { requireActiveAdmin } from '../middlewares/adminAuth.middleware.js';
 import { adminMutationRateLimiter } from '../../../core/middlewares/rateLimit.middleware.js';
@@ -17,6 +26,13 @@ const router = express.Router();
 router.use(checkUserJWT, requireActiveAdmin);
 
 router.get('/queue-counts', getQueueCounts);
+router.get('/reviews', listReviewCases);
+router.get('/reviews/:caseType/:caseId', getReviewCaseDetailController);
+router.get('/reviews/:caseType/:caseId/chat', getReviewChatController);
+router.get('/reviews/:caseType/:caseId/evidence/:evidenceId/access', getReviewEvidenceAccessController);
+router.post('/reviews/warranty-claims/:claimId/decision', adminMutationRateLimiter, decideWarrantyClaimController);
+router.post('/reviews/warranty-reworks/:requestId/decision', adminMutationRateLimiter, decideWarrantyReworkController);
+router.post('/reviews/cancellations/:cancellationId/decision', adminMutationRateLimiter, decideCancellationController);
 router.get('/kyc/requests', listKycRequests);
 router.get('/kyc/requests/:submissionId', getKycRequestDetail);
 router.get('/kyc/requests/:submissionId/documents/:documentId/access', getKycDocumentAccess);

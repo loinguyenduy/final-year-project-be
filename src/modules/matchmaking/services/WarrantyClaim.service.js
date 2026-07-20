@@ -1,5 +1,7 @@
 import { Op } from 'sequelize';
+import { randomUUID } from 'node:crypto';
 import db from '../../../core/database/connection.js';
+import { emitToRole } from '../../../core/realtime/realtime.gateway.js';
 import EvidenceVault from '../../fintech/models/EvidenceVault.model.js';
 import Job from '../models/Job.model.js';
 import JobWarranty from '../models/JobWarranty.model.js';
@@ -160,6 +162,12 @@ const createWarrantyClaimService = async (jobId, currentUser, payload = {}) => {
         );
         await warranty.update({ status: 'CLAIM_PENDING' }, { transaction });
         await transaction.commit();
+
+        emitToRole('ADMIN', 'ADMIN_REVIEW_QUEUE_UPDATED', {
+            event_id: randomUUID(),
+            occurred_at: submittedAt.toISOString(),
+            queue: 'ADMIN_REVIEW'
+        });
 
         emitJobLifecycleEvent({
             event: JOB_LIFECYCLE_EVENTS.WARRANTY_CLAIM_CREATED,

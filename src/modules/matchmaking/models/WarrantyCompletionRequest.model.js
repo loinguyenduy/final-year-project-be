@@ -45,7 +45,8 @@ const WarrantyCompletionRequest = db.define('Warranty_Completion_Request', {
             fields: ['warranty_id'],
             where: { status: 'PENDING' }
         },
-        { name: 'warranty_completion_requests_job_status', fields: ['job_id', 'status'] }
+        { name: 'warranty_completion_requests_job_status', fields: ['job_id', 'status'] },
+        { name: 'warranty_completion_requests_review_queue', fields: ['status', 'responded_at', 'id'] }
     ]
 });
 

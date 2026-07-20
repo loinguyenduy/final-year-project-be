@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 
 const immutableError = () => {
@@ -57,6 +57,14 @@ const AdminAuditLog = db.define('Admin_Audit_Log', {
   user_agent: {
     type: DataTypes.STRING(512),
     allowNull: true
+  },
+  idempotency_key: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
+  request_fingerprint: {
+    type: DataTypes.CHAR(64),
+    allowNull: true
   }
 }, {
   timestamps: true,
@@ -65,7 +73,13 @@ const AdminAuditLog = db.define('Admin_Audit_Log', {
     { fields: ['admin_id', 'createdAt'] },
     { fields: ['target_type', 'target_id', 'createdAt'] },
     { fields: ['action', 'createdAt'] },
-    { fields: ['correlation_id'] }
+    { fields: ['correlation_id'] },
+    {
+      name: 'admin_audit_scoped_idempotency_unique',
+      unique: true,
+      fields: ['action', 'target_type', 'target_id', 'idempotency_key'],
+      where: { idempotency_key: { [Op.ne]: null } }
+    }
   ],
   hooks: {
     beforeUpdate: immutableError,

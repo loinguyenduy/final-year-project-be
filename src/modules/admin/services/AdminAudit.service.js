@@ -21,7 +21,28 @@ const AUDIT_SNAPSHOT_KEYS = new Set([
   'user_kyc_status',
   'document_types',
   'reviewed_by_admin_id',
-  'reviewed_at'
+  'reviewed_at',
+  'case_type',
+  'case_id',
+  'job_id',
+  'claim_status',
+  'warranty_status',
+  'cancellation_status',
+  'job_status',
+  'contract_status',
+  'request_id',
+  'request_sequence',
+  'request_status',
+  'decision',
+  'classification',
+  'held_amount',
+  'released_amount',
+  'refunded_amount',
+  'customer_refund_amount',
+  'handyman_compensation_amount',
+  'platform_amount',
+  'resolved_by_admin_id',
+  'resolved_at'
 ]);
 const normalizeAuditSnapshot = (snapshot) => {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
@@ -58,6 +79,8 @@ const createAdminAuditLog = async ({
   correlationId,
   ipAddress = null,
   userAgent = null,
+  idempotencyKey = null,
+  requestFingerprint = null,
   transaction
 }) => AdminAuditLog.create({
   admin_id: adminId,
@@ -70,8 +93,26 @@ const createAdminAuditLog = async ({
   after_state: normalizeAuditSnapshot(afterState),
   correlation_id: correlationId,
   ip_address: ipAddress ? String(ipAddress).slice(0, 64) : null,
-  user_agent: userAgent ? String(userAgent).slice(0, 512) : null
+  user_agent: userAgent ? String(userAgent).slice(0, 512) : null,
+  idempotency_key: idempotencyKey,
+  request_fingerprint: requestFingerprint
 }, { transaction });
+
+const findScopedAdminDecision = ({
+  action,
+  targetType,
+  targetId,
+  idempotencyKey,
+  transaction
+}) => AdminAuditLog.findOne({
+  where: {
+    action,
+    target_type: targetType,
+    target_id: targetId,
+    idempotency_key: idempotencyKey
+  },
+  transaction
+});
 
 const getAdminAuditLogs = async (query = {}) => {
   const page = parsePositiveInteger(query.page, 'page', 1);
@@ -87,6 +128,7 @@ const getAdminAuditLogs = async (query = {}) => {
   });
   const { rows, count } = await AdminAuditLog.findAndCountAll({
     where,
+    attributes: { exclude: ['idempotency_key', 'request_fingerprint'] },
     order: [['createdAt', 'DESC'], ['id', 'DESC']],
     limit: pageSize,
     offset: (page - 1) * pageSize
@@ -103,4 +145,9 @@ const getAdminAuditLogs = async (query = {}) => {
   };
 };
 
-export { AdminAuditQueryError, createAdminAuditLog, getAdminAuditLogs };
+export {
+  AdminAuditQueryError,
+  createAdminAuditLog,
+  findScopedAdminDecision,
+  getAdminAuditLogs
+};

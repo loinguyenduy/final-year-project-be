@@ -43,6 +43,7 @@ const getCompletionSettlementKeys = (job, request) => ({
 });
 
 const getWarrantyReleaseKey = (warranty) => `job:${warranty.job_id}:warranty:${warranty.id}:release`;
+const getWarrantyRefundKey = (warranty) => `job:${warranty.job_id}:warranty:${warranty.id}:refund`;
 
 const resolveWarrantyTiming = (warrantyDays, startedAt = new Date()) => {
     const days = Number(warrantyDays);
@@ -235,7 +236,9 @@ const buildWarrantyDto = (warranty) => ({
     platform_fee_amount: parseVndInteger(warranty.platform_fee_amount).amount?.toString() || null,
     held_amount: parseVndInteger(warranty.warranty_held_amount).amount?.toString() || null,
     released_amount: parseVndInteger(warranty.warranty_released_amount).amount?.toString() || '0',
-    released_at: warranty.released_at
+    released_at: warranty.released_at,
+    refunded_amount: parseVndInteger(warranty.warranty_refunded_amount).amount?.toString() || '0',
+    refunded_at: warranty.refunded_at
 });
 
 const validateExistingConfirmedSettlement = async (job, request, transaction) => {
@@ -451,36 +454,94 @@ const confirmCompletionSettlementService = async (jobId, requestId, currentUser)
     }
 };
 
-const releaseWarrantyReserveInTransaction = async ({
-    job,
-    warranty,
-    transaction,
-    warrantyCompletionRequestId = null
-}) => {
-    const held = parseVndInteger(warranty.warranty_held_amount);
-    const released = parseVndInteger(warranty.warranty_released_amount);
-    if (!held.valid || held.amount <= 0n || !released.valid || released.amount !== 0n || warranty.released_at) {
-        return { error: serviceError('Warranty financial data is inconsistent.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
-    }
-    const hold = await Transaction.findOne({
+const reconcileWarrantyReserveInTransaction = async ({ job, warranty, transaction }) => {
+    const contract = await EContract.findOne({
         where: {
-            warranty_id: warranty.id,
-            transaction_type: 'WARRANTY_RESERVE_HOLD',
-            status: 'SUCCESS'
+            id: warranty.contract_id,
+            job_id: job.id,
+            acceptance_cycle: job.acceptance_cycle
         },
         transaction,
         lock: transaction.LOCK.UPDATE
     });
-    const holdAmount = parseVndInteger(hold?.amount);
-    if (!hold || !holdAmount.valid || holdAmount.amount !== held.amount) {
-        return { error: serviceError('Warranty hold ledger is inconsistent.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
+    const contractTotal = parseVndInteger(contract?.full_escrow_amount);
+    const warrantyTotal = parseVndInteger(warranty.total_amount);
+    const handymanSnapshot = parseVndInteger(warranty.handyman_immediate_amount);
+    const platformSnapshot = parseVndInteger(warranty.platform_fee_amount);
+    const heldMetadata = parseVndInteger(warranty.warranty_held_amount);
+    const releasedMetadata = parseVndInteger(warranty.warranty_released_amount);
+    const refundedMetadata = parseVndInteger(warranty.warranty_refunded_amount);
+    const split = contractTotal.valid ? calculateCompletionSplit(contractTotal.amount) : { valid: false };
+    if (!contract || contract.status !== 'ACTIVE'
+        || !contractTotal.valid || !warrantyTotal.valid || warrantyTotal.amount !== contractTotal.amount
+        || !split.valid
+        || !handymanSnapshot.valid || handymanSnapshot.amount !== split.handymanAmount
+        || !platformSnapshot.valid || platformSnapshot.amount !== split.platformAmount
+        || !heldMetadata.valid || heldMetadata.amount !== split.warrantyAmount
+        || !releasedMetadata.valid || !refundedMetadata.valid) {
+        return { error: serviceError('Warranty reserve snapshot is inconsistent.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
     }
-    const releaseKey = getWarrantyReleaseKey(warranty);
+
+    const ledger = await Transaction.findAll({
+        where: {
+            warranty_id: warranty.id,
+            transaction_type: { [Op.in]: ['WARRANTY_RESERVE_HOLD', 'WARRANTY_RELEASE', 'WARRANTY_REFUND'] },
+            status: 'SUCCESS'
+        },
+        order: [['id', 'ASC']],
+        transaction,
+        lock: transaction.LOCK.UPDATE
+    });
+    const holds = ledger.filter((entry) => entry.transaction_type === 'WARRANTY_RESERVE_HOLD');
+    const releases = ledger.filter((entry) => entry.transaction_type === 'WARRANTY_RELEASE');
+    const refunds = ledger.filter((entry) => entry.transaction_type === 'WARRANTY_REFUND');
+    const sum = (entries) => entries.reduce((total, entry) => {
+        const parsed = parseVndInteger(entry.amount);
+        return parsed.valid ? total + parsed.amount : null;
+    }, 0n);
+    const releasedLedger = sum(releases);
+    const refundedLedger = sum(refunds);
+    const holdAmount = parseVndInteger(holds[0]?.amount);
+    if (holds.length !== 1 || !holdAmount.valid || holdAmount.amount !== split.warrantyAmount
+        || releasedLedger === null || refundedLedger === null
+        || releasedLedger !== releasedMetadata.amount || refundedLedger !== refundedMetadata.amount
+        || (releasedMetadata.amount > 0n && (releases.length !== 1
+            || !warranty.released_at || releases[0].id !== warranty.release_transaction_id))
+        || (refundedMetadata.amount > 0n && (refunds.length !== 1
+            || !warranty.refunded_at || refunds[0].id !== warranty.refund_transaction_id))
+        || (releasedMetadata.amount === 0n && (warranty.released_at || warranty.release_transaction_id))
+        || (refundedMetadata.amount === 0n && (warranty.refunded_at || warranty.refund_transaction_id))) {
+        return { error: serviceError('Warranty reserve ledger is inconsistent.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
+    }
+    const remaining = split.warrantyAmount - releasedLedger - refundedLedger;
+    if (remaining < 0n) {
+        return { error: serviceError('Warranty reserve ledger exceeds the expected reserve.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
+    }
+    return { contract, expectedReserve: split.warrantyAmount, remaining, hold: holds[0], releases, refunds };
+};
+
+const settleWarrantyReserveInTransaction = async ({
+    job,
+    warranty,
+    transaction,
+    warrantyCompletionRequestId = null,
+    beneficiary = 'HANDYMAN'
+}) => {
+    if (!['HANDYMAN', 'CUSTOMER'].includes(beneficiary)) {
+        return { error: serviceError('Warranty beneficiary is invalid.', 400, 'VALIDATION_ERROR') };
+    }
+    const reconciliation = await reconcileWarrantyReserveInTransaction({ job, warranty, transaction });
+    if (reconciliation.error) return reconciliation;
+    if (reconciliation.remaining === 0n || reconciliation.releases.length || reconciliation.refunds.length) {
+        return { error: serviceError('Warranty settlement was already processed.', 409, 'WARRANTY_SETTLEMENT_ALREADY_PROCESSED') };
+    }
+    const transactionType = beneficiary === 'HANDYMAN' ? 'WARRANTY_RELEASE' : 'WARRANTY_REFUND';
+    const settlementKey = beneficiary === 'HANDYMAN' ? getWarrantyReleaseKey(warranty) : getWarrantyRefundKey(warranty);
     const existingRelease = await Transaction.findOne({
         where: {
             [Op.or]: [
-                { idempotency_key: releaseKey },
-                { warranty_id: warranty.id, transaction_type: 'WARRANTY_RELEASE', status: 'SUCCESS' }
+                { idempotency_key: settlementKey },
+                { warranty_id: warranty.id, transaction_type: { [Op.in]: ['WARRANTY_RELEASE', 'WARRANTY_REFUND'] }, status: 'SUCCESS' }
             ]
         },
         transaction,
@@ -489,24 +550,42 @@ const releaseWarrantyReserveInTransaction = async ({
     if (existingRelease) {
         return { error: serviceError('Warranty settlement was already processed.', 409, 'WARRANTY_SETTLEMENT_ALREADY_PROCESSED') };
     }
-    const walletsResult = await loadRequiredWallets(job, transaction, ['SYSTEM_ESCROW', 'HANDYMAN_MAIN']);
-    if (walletsResult.error) return walletsResult;
-    const systemEscrow = walletsResult.wallets.get('SYSTEM_ESCROW');
-    const handymanMain = walletsResult.wallets.get('HANDYMAN_MAIN');
+    const targetUserId = beneficiary === 'HANDYMAN' ? job.selected_handyman_id : job.customer_id;
+    const targetWalletType = beneficiary === 'HANDYMAN' ? 'HANDYMAN_MAIN' : 'CUSTOMER_MAIN';
+    const wallets = await Wallet.findAll({
+        where: {
+            [Op.or]: [
+                { user_id: null, wallet_type: 'SYSTEM_ESCROW' },
+                { user_id: targetUserId, wallet_type: targetWalletType }
+            ]
+        },
+        order: [['id', 'ASC']],
+        transaction,
+        lock: transaction.LOCK.UPDATE
+    });
+    const systemEscrow = wallets.find((entry) => entry.wallet_type === 'SYSTEM_ESCROW');
+    const targetWallet = wallets.find((entry) => entry.wallet_type === targetWalletType && entry.user_id === targetUserId);
+    if (!systemEscrow || !targetWallet || systemEscrow.is_blocked || targetWallet.is_blocked
+        || systemEscrow.currency !== 'VND' || targetWallet.currency !== 'VND') {
+        return { error: serviceError('Warranty settlement wallets are invalid.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
+    }
+    if (reconciliation.hold.from_wallet_id !== systemEscrow.id || reconciliation.hold.to_wallet_id !== null) {
+        return { error: serviceError('Warranty hold wallet references are inconsistent.', 409, 'FINANCIAL_DATA_INCONSISTENT') };
+    }
     const escrowBalance = parseDecimalHundredths(systemEscrow.balance);
-    if (!escrowBalance.valid || escrowBalance.amount < held.amount * 100n) {
+    if (!escrowBalance.valid || escrowBalance.amount < reconciliation.remaining * 100n) {
         return { error: serviceError('SYSTEM_ESCROW balance is insufficient.', 409, 'ESCROW_AMOUNT_INSUFFICIENT') };
     }
-    await systemEscrow.decrement('balance', { by: held.amount.toString(), transaction });
-    await handymanMain.increment('balance', { by: held.amount.toString(), transaction });
-    const releaseTransaction = await Transaction.create({
-        amount: held.amount.toString(),
-        transaction_type: 'WARRANTY_RELEASE',
+    await systemEscrow.decrement('balance', { by: reconciliation.remaining.toString(), transaction });
+    await targetWallet.increment('balance', { by: reconciliation.remaining.toString(), transaction });
+    const settlementTransaction = await Transaction.create({
+        amount: reconciliation.remaining.toString(),
+        transaction_type: transactionType,
         status: 'SUCCESS',
         payment_method: 'INTERNAL',
-        description: `Warranty Reserve release for Job ${job.id}`,
+        description: `Warranty Reserve ${beneficiary === 'HANDYMAN' ? 'release' : 'refund'} for Job ${job.id}`,
         from_wallet_id: systemEscrow.id,
-        to_wallet_id: handymanMain.id,
+        to_wallet_id: targetWallet.id,
         job_id: job.id,
         quote_id: warranty.quote_id,
         acceptance_cycle: job.acceptance_cycle,
@@ -514,11 +593,24 @@ const releaseWarrantyReserveInTransaction = async ({
         completion_request_id: warranty.completion_request_id,
         warranty_id: warranty.id,
         warranty_completion_request_id: warrantyCompletionRequestId,
-        idempotency_key: releaseKey,
+        idempotency_key: settlementKey,
         expires_at: null
     }, { transaction });
-    return { releaseTransaction, releasedAmount: held.amount };
+    return {
+        beneficiary,
+        settlementAmount: reconciliation.remaining,
+        settlementTransaction,
+        releaseTransaction: beneficiary === 'HANDYMAN' ? settlementTransaction : null,
+        refundTransaction: beneficiary === 'CUSTOMER' ? settlementTransaction : null,
+        releasedAmount: beneficiary === 'HANDYMAN' ? reconciliation.remaining : 0n,
+        refundedAmount: beneficiary === 'CUSTOMER' ? reconciliation.remaining : 0n
+    };
 };
+
+const releaseWarrantyReserveInTransaction = (options) => settleWarrantyReserveInTransaction({
+    ...options,
+    beneficiary: 'HANDYMAN'
+});
 
 const releaseExpiredWarrantyService = async (warrantyId, now = new Date()) => {
     if (!isValidUuid(warrantyId)) {
@@ -626,7 +718,9 @@ export {
     calculateCompletionSplit,
     confirmCompletionSettlementService,
     loadCanonicalCompletionFinancialContext,
+    reconcileWarrantyReserveInTransaction,
     releaseExpiredWarrantyService,
     releaseWarrantyReserveInTransaction,
+    settleWarrantyReserveInTransaction,
     resolveWarrantyTiming
 };

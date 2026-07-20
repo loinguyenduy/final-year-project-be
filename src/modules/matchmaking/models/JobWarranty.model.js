@@ -45,6 +45,13 @@ const JobWarranty = db.define('Job_Warranty', {
     },
     released_at: { type: DataTypes.DATE, allowNull: true },
     release_transaction_id: { type: DataTypes.UUID, allowNull: true },
+    warranty_refunded_amount: {
+        type: DataTypes.DECIMAL(15, 2),
+        allowNull: false,
+        defaultValue: 0
+    },
+    refunded_at: { type: DataTypes.DATE, allowNull: true },
+    refund_transaction_id: { type: DataTypes.UUID, allowNull: true },
     rework_cycle_count: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -58,6 +65,12 @@ const JobWarranty = db.define('Job_Warranty', {
             name: 'job_warranties_job_cycle_unique',
             unique: true,
             fields: ['job_id', 'acceptance_cycle']
+        },
+        {
+            name: 'job_warranties_refund_transaction_unique',
+            unique: true,
+            fields: ['refund_transaction_id'],
+            where: { refund_transaction_id: { [Op.ne]: null } }
         },
         {
             name: 'job_warranties_completion_request_unique',

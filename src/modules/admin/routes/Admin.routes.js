@@ -19,6 +19,20 @@ import {
 import { checkUserJWT } from '../../../core/middlewares/auth.middleware.js';
 import { requireActiveAdmin } from '../middlewares/adminAuth.middleware.js';
 import { adminMutationRateLimiter } from '../../../core/middlewares/rateLimit.middleware.js';
+import {
+  getAdminJob,
+  getAdminJobChatController,
+  getAdminJobCycle,
+  getAdminJobEvidenceAccessController,
+  getAdminJobImageAccessController,
+  listAdminJobAudits,
+  listAdminJobBids,
+  listAdminJobCycles,
+  listAdminJobEvidence,
+  listAdminJobTimeline,
+  listAdminJobTransactions,
+  listAdminJobs
+} from '../controllers/AdminJob.controller.js';
 
 const router = express.Router();
 
@@ -26,6 +40,18 @@ const router = express.Router();
 router.use(checkUserJWT, requireActiveAdmin);
 
 router.get('/queue-counts', getQueueCounts);
+router.get('/jobs', listAdminJobs);
+router.get('/jobs/:jobId', getAdminJob);
+router.get('/jobs/:jobId/bids', listAdminJobBids);
+router.get('/jobs/:jobId/cycles', listAdminJobCycles);
+router.get('/jobs/:jobId/cycles/:acceptanceCycle', getAdminJobCycle);
+router.get('/jobs/:jobId/evidence', listAdminJobEvidence);
+router.get('/jobs/:jobId/evidence/:evidenceId/access', getAdminJobEvidenceAccessController);
+router.get('/jobs/:jobId/images/:imageKey/access', getAdminJobImageAccessController);
+router.get('/jobs/:jobId/timeline', listAdminJobTimeline);
+router.get('/jobs/:jobId/audits', listAdminJobAudits);
+router.get('/jobs/:jobId/chat', getAdminJobChatController);
+router.get('/jobs/:jobId/transactions', listAdminJobTransactions);
 router.get('/reviews', listReviewCases);
 router.get('/reviews/:caseType/:caseId', getReviewCaseDetailController);
 router.get('/reviews/:caseType/:caseId/chat', getReviewChatController);

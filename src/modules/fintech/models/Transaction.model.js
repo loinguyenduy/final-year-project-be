@@ -143,6 +143,10 @@ const Transaction = db.define('Transaction', {
             fields: ['warranty_id', 'transaction_type']
         },
         {
+            name: 'transactions_job_created_id',
+            fields: ['job_id', 'createdAt', 'id']
+        },
+        {
             name: 'transactions_one_successful_remaining_payment_per_quote',
             unique: true,
             fields: ['job_id', 'acceptance_cycle', 'quote_id'],

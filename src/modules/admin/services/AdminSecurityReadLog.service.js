@@ -1,8 +1,18 @@
-const logSensitiveAdminRead = ({ adminId, caseType, caseId, resourceType, correlationId }) => {
+const logSensitiveAdminRead = ({
+  adminId,
+  caseType = null,
+  caseId = null,
+  jobId = null,
+  acceptanceCycle = null,
+  resourceType,
+  correlationId
+}) => {
   console.info('[admin-security-read]', {
     admin_id: adminId,
-    case_type: caseType,
-    case_id: caseId,
+    ...(caseType ? { case_type: caseType } : {}),
+    ...(caseId ? { case_id: caseId } : {}),
+    ...(jobId ? { job_id: jobId } : {}),
+    ...(acceptanceCycle != null ? { acceptance_cycle: Number(acceptanceCycle) } : {}),
     resource_type: resourceType,
     correlation_id: correlationId,
     timestamp: new Date().toISOString()

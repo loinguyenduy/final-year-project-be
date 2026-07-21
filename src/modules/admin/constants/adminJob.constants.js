@@ -1,0 +1,62 @@
+import { ACTION_REASON_CODES, REVIEW_ACTIONS } from './adminReview.constants.js';
+
+const ADMIN_JOB_LIMITS = Object.freeze({
+  DEFAULT_PAGE_SIZE: 20,
+  MAX_PAGE_SIZE: 100,
+  AGGREGATE_BIDS: 100,
+  AGGREGATE_CYCLES: 20,
+  CYCLE_INDEX: 50,
+  EVIDENCE_PER_CYCLE: 100,
+  TIMELINE: 200,
+  AUDITS: 100,
+  CHAT_DEFAULT: 30,
+  CURSOR_DEFAULT: 50,
+  CURSOR_MAX: 100
+});
+
+const ADMIN_JOB_SORTS = Object.freeze([
+  'CREATED_DESC',
+  'CREATED_ASC',
+  'UPDATED_DESC',
+  'UPDATED_ASC',
+  'REVIEW_REQUIRED_FIRST'
+]);
+
+const CYCLE_ASSIGNMENTS = Object.freeze({
+  CANONICAL: 'CANONICAL',
+  INFERRED: 'INFERRED_FROM_ACCEPTED_BOUNDARY',
+  JOB_LEVEL: 'JOB_LEVEL'
+});
+
+const FINANCE_DIAGNOSTIC_STATUSES = Object.freeze({
+  CONSISTENT: 'CONSISTENT',
+  INCONSISTENT: 'INCONSISTENT',
+  PARTIAL_LEGACY: 'PARTIAL_LEGACY',
+  NOT_APPLICABLE: 'NOT_APPLICABLE'
+});
+
+const TEXT_REQUIRED_ACTIONS = new Set([
+  REVIEW_ACTIONS.RELEASE_WARRANTY_RESERVE,
+  REVIEW_ACTIONS.REFUND_WARRANTY_RESERVE,
+  REVIEW_ACTIONS.RESOLVE_CANCELLATION_CUSTOMER_FAULT,
+  REVIEW_ACTIONS.RESOLVE_CANCELLATION_HANDYMAN_FAULT,
+  REVIEW_ACTIONS.RESOLVE_CANCELLATION_NEUTRAL
+]);
+
+const buildDecisionRequirements = (allowedActions = []) => Object.fromEntries(
+  allowedActions.map((action) => [action, {
+    reason_codes: ACTION_REASON_CODES[action] || [],
+    reason_text_required: TEXT_REQUIRED_ACTIONS.has(action),
+    reason_text_required_for_codes: TEXT_REQUIRED_ACTIONS.has(action) ? [] : ['OTHER'],
+    reason_text_max_length: 500,
+    idempotency_key_required: true
+  }])
+);
+
+export {
+  ADMIN_JOB_LIMITS,
+  ADMIN_JOB_SORTS,
+  CYCLE_ASSIGNMENTS,
+  FINANCE_DIAGNOSTIC_STATUSES,
+  buildDecisionRequirements
+};

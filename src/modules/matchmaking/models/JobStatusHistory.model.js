@@ -8,6 +8,11 @@ const JobStatusHistory = db.define('Job_Status_History', {
     reason: { type: DataTypes.TEXT, allowNull: true },
     trigger_gps_lat: { type: DataTypes.DECIMAL(10, 8), allowNull: true },
     trigger_gps_long: { type: DataTypes.DECIMAL(11, 8), allowNull: true }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        { name: 'job_status_history_job_created_id', fields: ['job_id', 'createdAt', 'id'] }
+    ]
+});
 
 export default JobStatusHistory;

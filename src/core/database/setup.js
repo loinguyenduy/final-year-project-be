@@ -842,6 +842,33 @@ const verifyAdminReviewSchema = async () => {
     console.log('Admin Review schema verified successfully.');
 };
 
+const verifyAdminJobIndexes = async () => {
+    const requiredIndexes = [
+        ['Jobs', 'jobs_status_created_id'],
+        ['Jobs', 'jobs_service_created_id'],
+        ['Jobs', 'jobs_created_id'],
+        ['Bids', 'bids_job_created_id'],
+        ['Job_Status_Histories', 'job_status_history_job_created_id'],
+        ['Evidence_Vaults', 'evidence_vaults_job_cycle_uploaded_id'],
+        ['Transactions', 'transactions_job_created_id']
+    ];
+    const [indexes] = await db.query(`
+        SELECT tablename, indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map(([, name]) => `'${name}'`).join(', ')})
+    `);
+    const found = new Set(indexes.map((index) => `${index.tablename}:${index.indexname}`));
+    const missing = requiredIndexes.filter(([table, name]) => !found.has(`${table}:${name}`));
+    if (missing.length) {
+        throw new Error(
+            `Required Admin Job indexes are missing: ${missing.map(([, name]) => name).join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    console.log('Admin Job indexes verified successfully.');
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -873,6 +900,7 @@ const initDatabase = async () => {
         await verifyQuotePaymentIndexes();
         await verifyCompletionWarrantySchema();
         await verifyAdminReviewSchema();
+        await verifyAdminJobIndexes();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

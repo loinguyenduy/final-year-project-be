@@ -215,7 +215,7 @@ const decideWarrantyClaim = async ({ claimId, admin, payload, requestMeta }) => 
       transaction
     });
     await transaction.commit();
-    signal = { caseType: REVIEW_CASE_TYPES.WARRANTY_CLAIM, caseId: claim.id, userIds: [job.customer_id, job.selected_handyman_id] };
+    signal = { caseType: REVIEW_CASE_TYPES.WARRANTY_CLAIM, caseId: claim.id, jobId: job.id, userIds: [job.customer_id, job.selected_handyman_id] };
     emitAdminReviewSignals(signal);
     return {
       replayed: false,
@@ -371,6 +371,7 @@ const decideWarrantyRework = async ({ requestId, admin, payload, requestMeta }) 
     emitAdminReviewSignals({
       caseType: REVIEW_CASE_TYPES.WARRANTY_REWORK,
       caseId: request.id,
+      jobId: job.id,
       userIds: [job.customer_id, job.selected_handyman_id]
     });
     return {

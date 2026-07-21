@@ -15,7 +15,7 @@ const upsertGoogleUser = async (googleProfile) => {
     const avatarUrl = googleProfile.photos[0].value;
     const providerId = googleProfile.id;
 
-    let user = await User.findOne({ where: { email: email } });
+    let user = await User.findOne({ where: { email: email }, transaction: t, lock: t.LOCK.UPDATE });
 
     if (user?.role === 'ADMIN') {
       await t.rollback();
@@ -63,6 +63,8 @@ const upsertGoogleUser = async (googleProfile) => {
 
       const existingProvider = await AuthProvider.findOne({
         where: { user_id: user.id, provider: "GOOGLE" },
+        transaction: t,
+        lock: t.LOCK.UPDATE
       });
 
       if (!existingProvider) {
@@ -83,6 +85,7 @@ const upsertGoogleUser = async (googleProfile) => {
       email: user.email,
       full_name: user.full_name,
       role: user.role,
+      auth_version: Number(user.auth_version || 0),
     };
 
     const accessToken = createAccessToken(payload);
@@ -108,7 +111,7 @@ const upsertGoogleUser = async (googleProfile) => {
       DT: {
         access_token: accessToken,
         refresh_token: refreshToken,
-        user: user.get({ plain: true }),
+        user: (() => { const value = user.get({ plain: true }); delete value.auth_version; return value; })(),
       },
     };
   } catch (error) {
@@ -136,7 +139,7 @@ const upsertFacebookUser = async (facebookProfile) => {
     const avatarUrl = facebookProfile.photos && facebookProfile.photos.length > 0 ? facebookProfile.photos[0].value : null;
     const providerId = facebookProfile.id;
 
-    let user = await User.findOne({ where: { email: email } });
+    let user = await User.findOne({ where: { email: email }, transaction: t, lock: t.LOCK.UPDATE });
 
     if (user?.role === 'ADMIN') {
       await t.rollback();
@@ -180,6 +183,8 @@ const upsertFacebookUser = async (facebookProfile) => {
 
       const existingProvider = await AuthProvider.findOne({
         where: { user_id: user.id, provider: "FACEBOOK" },
+        transaction: t,
+        lock: t.LOCK.UPDATE
       });
 
       if (!existingProvider) {
@@ -194,7 +199,8 @@ const upsertFacebookUser = async (facebookProfile) => {
       id: user.id, 
       email: user.email, 
       full_name: user.full_name, 
-      role: user.role 
+      role: user.role,
+      auth_version: Number(user.auth_version || 0)
     };
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
@@ -211,7 +217,7 @@ const upsertFacebookUser = async (facebookProfile) => {
     return {
       EM: "Facebook login successfully",
       EC: 0,
-      DT: { access_token: accessToken, refresh_token: refreshToken, user: user.get({ plain: true }) },
+      DT: { access_token: accessToken, refresh_token: refreshToken, user: (() => { const value = user.get({ plain: true }); delete value.auth_version; return value; })() },
     };
   } catch (error) {
     await t.rollback();

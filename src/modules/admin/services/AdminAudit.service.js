@@ -42,7 +42,20 @@ const AUDIT_SNAPSHOT_KEYS = new Set([
   'handyman_compensation_amount',
   'platform_amount',
   'resolved_by_admin_id',
-  'resolved_at'
+  'resolved_at',
+  'is_active',
+  'auth_version',
+  'active_job_count',
+  'active_jobs_by_status',
+  'active_created_jobs',
+  'active_assigned_jobs',
+  'active_warranty_jobs',
+  'pending_review_jobs',
+  'service_code',
+  'service_name',
+  'icon_configured',
+  'job_usage_count',
+  'handyman_association_count'
 ]);
 const normalizeAuditSnapshot = (snapshot) => {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {

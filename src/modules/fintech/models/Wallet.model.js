@@ -40,6 +40,10 @@ const Wallet = db.define('Wallet', {
                     [Op.in]: ['SYSTEM_PROFIT', 'SYSTEM_ESCROW']
                 }
             }
+        },
+        {
+            name: 'wallets_type_blocked_created',
+            fields: ['wallet_type', 'is_blocked', 'createdAt', 'id']
         }
     ]
 });

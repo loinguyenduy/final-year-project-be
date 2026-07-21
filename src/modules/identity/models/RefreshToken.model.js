@@ -22,7 +22,12 @@ const RefreshToken = db.define(
       defaultValue: false 
     }
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      { name: 'refresh_tokens_user_revoked', fields: ['user_id', 'is_revoked'] }
+    ]
+  }
 );
 
 export default RefreshToken;

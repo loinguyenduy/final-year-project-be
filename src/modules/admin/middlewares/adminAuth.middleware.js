@@ -11,7 +11,7 @@ const requireActiveAdmin = async (req, res, next) => {
       });
     }
 
-    const admin = await User.findByPk(req.user.id, {
+    const admin = req.authenticatedUser || await User.findByPk(req.user.id, {
       attributes: ['id', 'full_name', 'email', 'role', 'is_active']
     });
     if (!admin) {

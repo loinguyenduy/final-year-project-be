@@ -132,12 +132,29 @@ const buildSessionPayload = (user) => ({
   email: user.email,
   full_name: user.full_name,
   role: user.role,
+  auth_version: Number(user.auth_version || 0),
 });
 
 const issueSession = async (user, auditContext = null) => {
   const transaction = await db.transaction();
   try {
-    const payload = buildSessionPayload(user);
+    const canonicalUser = await User.findByPk(user.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!canonicalUser || canonicalUser.role !== user.role || Number(canonicalUser.auth_version || 0) !== Number(user.auth_version || 0)) {
+      const error = new Error('The account changed while the session was being created.');
+      error.authResult = { EM: 'This session request is no longer valid. Please login again.', EC: 401, code: 'SESSION_REVOKED', DT: '' };
+      throw error;
+    }
+    if (!canonicalUser.is_active) {
+      const error = new Error('The account was deactivated while the session was being created.');
+      error.authResult = {
+        EM: canonicalUser.role === 'ADMIN' ? 'This administrator account is inactive.' : 'Your account is inactive.',
+        EC: 403,
+        code: canonicalUser.role === 'ADMIN' ? 'ADMIN_NOT_ACTIVE' : 'ACCOUNT_INACTIVE',
+        DT: ''
+      };
+      throw error;
+    }
+    const payload = buildSessionPayload(canonicalUser);
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
     const expiresAt = new Date(Date.now() + getRefreshCookieOptions().maxAge);
@@ -266,6 +283,7 @@ const handleLoginUser = async (inputUserData, options = {}) => {
     const session = await issueSession(user, isAdminLogin ? options.auditContext : null);
 
     const userData = user.get({ plain: true });
+    delete userData.auth_version;
 
     return {
       EM: "Login successfully.",
@@ -278,6 +296,7 @@ const handleLoginUser = async (inputUserData, options = {}) => {
       },
     };
   } catch (error) {
+    if (error.authResult) return error.authResult;
     console.log("Error in handleLoginUser: ", error);
     return {
       EM: "Something wrongs in service...",
@@ -320,6 +339,33 @@ const handleRefreshToken = async (cookieToken) => {
         };
     }
 
+    const user = await User.findOne({
+      where: { id: decodedUser.id },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    if (!user) {
+      await existingToken.update({ is_revoked: true }, { transaction });
+      await transaction.commit();
+      return { EM: 'User not found.', EC: 401, code: 'SESSION_REVOKED', DT: '' };
+    }
+    if (!user.is_active) {
+      await RefreshToken.update({ is_revoked: true }, { where: { user_id: user.id }, transaction });
+      await transaction.commit();
+      return {
+        EM: user.role === 'ADMIN' ? 'This administrator account is inactive.' : 'User account is inactive.',
+        EC: user.role === 'ADMIN' ? 403 : 401,
+        code: user.role === 'ADMIN' ? 'ADMIN_NOT_ACTIVE' : 'ACCOUNT_INACTIVE',
+        DT: ''
+      };
+    }
+    const tokenAuthVersion = Number.isInteger(decodedUser.auth_version) ? decodedUser.auth_version : 0;
+    if (decodedUser.role !== user.role || tokenAuthVersion !== Number(user.auth_version || 0)) {
+      await RefreshToken.update({ is_revoked: true }, { where: { user_id: user.id }, transaction });
+      await transaction.commit();
+      return { EM: 'This session has been revoked. Please login again.', EC: 401, code: 'SESSION_REVOKED', DT: '' };
+    }
+
     if (new Date(existingToken.expires_at).getTime() <= Date.now()) {
       await existingToken.update({ is_revoked: true }, { transaction });
       await transaction.commit();
@@ -349,41 +395,6 @@ const handleRefreshToken = async (cookieToken) => {
     // Revoke current token to prevent reuse
     await existingToken.update({ is_revoked: true }, { transaction });
 
-    let user = await User.findOne({
-      where: { id: decodedUser.id },
-      transaction,
-      lock: transaction.LOCK.UPDATE
-    });
-    if (!user) {
-      await transaction.commit();
-      return {
-        EM: 'User not found.',
-        EC: 401,
-        code: decodedUser.role === 'ADMIN' ? 'ADMIN_SESSION_EXPIRED' : 'SESSION_EXPIRED',
-        DT: ''
-      };
-    }
-    if (!user.is_active) {
-      await transaction.commit();
-      return {
-        EM: user.role === 'ADMIN' ? 'This administrator account is inactive.' : 'User account is inactive.',
-        EC: user.role === 'ADMIN' ? 403 : 401,
-        code: user.role === 'ADMIN' ? 'ADMIN_NOT_ACTIVE' : 'ACCOUNT_INACTIVE',
-        DT: ''
-      };
-    }
-    if (decodedUser.role !== user.role) {
-      await transaction.commit();
-      return {
-        EM: user.role === 'ADMIN'
-          ? 'Administrators must sign in through the Admin Portal.'
-          : 'Your account role changed. Please sign in again.',
-        EC: 403,
-        code: user.role === 'ADMIN' ? 'ADMIN_PORTAL_REQUIRED' : 'SESSION_EXPIRED',
-        DT: ''
-      };
-    }
-
     const payload = buildSessionPayload(user);
 
     const newAccessToken = createAccessToken(payload);
@@ -407,7 +418,12 @@ const handleRefreshToken = async (cookieToken) => {
       DT: {
         access_token: newAccessToken,
         refresh_token: newRefreshToken,
-        user: buildSessionPayload(user)
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role
+        }
       },
     };
   } catch (error) {

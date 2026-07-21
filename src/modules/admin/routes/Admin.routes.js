@@ -33,6 +33,22 @@ import {
   listAdminJobTransactions,
   listAdminJobs
 } from '../controllers/AdminJob.controller.js';
+import {
+  deactivateAdminUser,
+  getAdminUser,
+  listAdminUserJobs,
+  listAdminUsers,
+  reactivateAdminUser
+} from '../controllers/AdminUser.controller.js';
+import { getAdminTransaction, getAdminTransactions, getAdminWallets } from '../controllers/AdminFinance.controller.js';
+import {
+  activateAdminService,
+  createAdminServiceController,
+  deactivateAdminService,
+  getAdminServiceController,
+  listAdminServices,
+  updateAdminServiceController
+} from '../controllers/AdminService.controller.js';
 
 const router = express.Router();
 
@@ -40,6 +56,20 @@ const router = express.Router();
 router.use(checkUserJWT, requireActiveAdmin);
 
 router.get('/queue-counts', getQueueCounts);
+router.get('/users', listAdminUsers);
+router.get('/users/:userId', getAdminUser);
+router.get('/users/:userId/jobs', listAdminUserJobs);
+router.post('/users/:userId/deactivate', adminMutationRateLimiter, deactivateAdminUser);
+router.post('/users/:userId/reactivate', adminMutationRateLimiter, reactivateAdminUser);
+router.get('/wallets', getAdminWallets);
+router.get('/transactions', getAdminTransactions);
+router.get('/transactions/:transactionId', getAdminTransaction);
+router.get('/services', listAdminServices);
+router.get('/services/:serviceId', getAdminServiceController);
+router.post('/services', adminMutationRateLimiter, createAdminServiceController);
+router.patch('/services/:serviceId', adminMutationRateLimiter, updateAdminServiceController);
+router.post('/services/:serviceId/activate', adminMutationRateLimiter, activateAdminService);
+router.post('/services/:serviceId/deactivate', adminMutationRateLimiter, deactivateAdminService);
 router.get('/jobs', listAdminJobs);
 router.get('/jobs/:jobId', getAdminJob);
 router.get('/jobs/:jobId/bids', listAdminJobBids);

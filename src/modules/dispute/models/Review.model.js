@@ -6,6 +6,11 @@ const Review = db.define('Review', {
     rating_stars: { type: DataTypes.INTEGER, allowNull: false },
     is_job_successful: { type: DataTypes.BOOLEAN, allowNull: false },
     comment: { type: DataTypes.TEXT }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        { name: 'reviews_reviewee_created_id', fields: ['reviewee_id', 'createdAt', 'id'] }
+    ]
+});
 
 export default Review;

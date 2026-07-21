@@ -869,6 +869,51 @@ const verifyAdminJobIndexes = async () => {
     console.log('Admin Job indexes verified successfully.');
 };
 
+const verifyAdminManagementSchema = async () => {
+    const [columns] = await db.query(`
+        SELECT column_name, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Users'
+          AND column_name = 'auth_version'
+    `);
+    const authVersion = columns[0];
+    if (!authVersion || authVersion.is_nullable !== 'NO' || !String(authVersion.column_default || '').includes('0')) {
+        throw new Error(
+            'Required Users.auth_version INTEGER NOT NULL DEFAULT 0 is missing or invalid. '
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    const requiredIndexes = [
+        'users_role_active_created',
+        'users_kyc_created',
+        'refresh_tokens_user_revoked',
+        'wallets_type_blocked_created',
+        'wallets_user_type_unique',
+        'transactions_type_status_created_id',
+        'transactions_from_wallet_created_id',
+        'transactions_to_wallet_created_id',
+        'transactions_payer_created_id',
+        'services_active_name',
+        'reviews_reviewee_created_id'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const found = new Set(indexes.map((index) => index.indexname));
+    const missing = requiredIndexes.filter((name) => !found.has(name));
+    if (missing.length) {
+        throw new Error(
+            `Required Admin Management indexes are missing: ${missing.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    console.log('Admin User, Wallet and Service schema verified successfully.');
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -901,6 +946,7 @@ const initDatabase = async () => {
         await verifyCompletionWarrantySchema();
         await verifyAdminReviewSchema();
         await verifyAdminJobIndexes();
+        await verifyAdminManagementSchema();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

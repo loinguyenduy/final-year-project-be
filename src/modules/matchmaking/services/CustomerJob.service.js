@@ -120,6 +120,9 @@ const createJobService = async (userId, jobData) => {
         if (!service) {
             return { EM: "Selected service does not exist.", EC: 404, DT: "" };
         }
+        if (!service.is_active) {
+            return { EM: "Selected service is no longer available for new Jobs.", EC: 409, code: "SERVICE_INACTIVE", DT: "" };
+        }
 
         // Build the address snapshot without allowing geocoder output to overwrite local address data.
         let final_service_address = "";
@@ -365,6 +368,9 @@ const updatePostedJobService = async (userId, jobId, jobData, uploadedFiles = []
             abort(serviceError('Your account must be KYC verified to edit a Job.', 403, 'KYC_REQUIRED'));
         }
         if (!service) abort(serviceError('Selected service does not exist.', 404, 'SERVICE_NOT_FOUND'));
+        if (!service.is_active && currentJob.service_id !== service.id) {
+            abort(serviceError('Selected service is no longer available for new selections.', 409, 'SERVICE_INACTIVE'));
+        }
 
         let locationSnapshot = null;
         let profileAddress = null;

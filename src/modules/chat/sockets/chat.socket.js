@@ -41,10 +41,13 @@ const refreshSocketUser = async (socket) => {
       { caller_inactive: true }
     );
   }
+  if (Number(socket.data.user.auth_version || 0) !== Number(user.auth_version || 0)) {
+    throw chatError('This session has been revoked.', 401, 'SESSION_REVOKED', { caller_inactive: true });
+  }
   if (!['CUSTOMER', 'HANDYMAN'].includes(user.role)) {
     throw chatError('User is not allowed to use chat.', 403, 'SOCKET_UNAUTHORIZED');
   }
-  socket.data.user = { id: user.id, role: user.role, full_name: user.full_name };
+  socket.data.user = { id: user.id, role: user.role, full_name: user.full_name, auth_version: Number(user.auth_version || 0) };
   return user;
 };
 

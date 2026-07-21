@@ -31,6 +31,12 @@ const User = db.define(
       type: DataTypes.BOOLEAN, 
       defaultValue: true 
     },
+    auth_version: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      validate: { min: 0 }
+    },
     avatar_url: { 
       type: DataTypes.TEXT, 
       allowNull: true 
@@ -45,9 +51,13 @@ const User = db.define(
     }
   },
 
-  { 
-    timestamps: true
-},
+  {
+    timestamps: true,
+    indexes: [
+      { name: 'users_role_active_created', fields: ['role', 'is_active', 'createdAt', 'id'] },
+      { name: 'users_kyc_created', fields: ['kyc_status', 'createdAt', 'id'] }
+    ]
+  },
 );
 
 export default User;

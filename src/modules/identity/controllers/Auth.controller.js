@@ -134,7 +134,13 @@ const getAdminSession = (req, res) => res.status(200).json({
   EM: 'Administrator session retrieved successfully.',
   EC: 0,
   code: 'ADMIN_SESSION_RETRIEVED',
-  DT: { user: req.admin.get({ plain: true }) }
+  DT: { user: {
+    id: req.admin.id,
+    full_name: req.admin.full_name,
+    email: req.admin.email,
+    role: req.admin.role,
+    is_active: Boolean(req.admin.is_active)
+  } }
 });
 
 const requestRefreshToken = async (req, res) => {

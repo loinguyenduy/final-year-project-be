@@ -65,7 +65,7 @@ const getDetailedProfileService = async (userId) => {
                     model: HandymanService,
                     as: 'Handyman_Services',
                     attributes: ['id', 'service_id'],
-                    include: [{ model: Service, attributes: ['id', 'name', 'icon_url', 'service_code'] }]
+                    include: [{ model: Service, attributes: ['id', 'name', 'icon_url', 'service_code', 'is_active'] }]
                 },
                 {
                     model: HandymanServiceArea,

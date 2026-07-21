@@ -7,6 +7,11 @@ const Service = db.define('Service', {
     name: { type: DataTypes.STRING(100), allowNull: false },
     icon_url: { type: DataTypes.TEXT },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
-}, { timestamps: false });
+}, {
+    timestamps: false,
+    indexes: [
+        { name: 'services_active_name', fields: ['is_active', 'name', 'id'] }
+    ]
+});
 
 export default Service;

@@ -147,6 +147,22 @@ const Transaction = db.define('Transaction', {
             fields: ['job_id', 'createdAt', 'id']
         },
         {
+            name: 'transactions_type_status_created_id',
+            fields: ['transaction_type', 'status', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_from_wallet_created_id',
+            fields: ['from_wallet_id', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_to_wallet_created_id',
+            fields: ['to_wallet_id', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_payer_created_id',
+            fields: ['payer_user_id', 'createdAt', 'id']
+        },
+        {
             name: 'transactions_one_successful_remaining_payment_per_quote',
             unique: true,
             fields: ['job_id', 'acceptance_cycle', 'quote_id'],

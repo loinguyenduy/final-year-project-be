@@ -37,9 +37,16 @@ const emitToRole = (role, eventName, payload) => {
     return true;
 };
 
+const disconnectUserSockets = (userId) => {
+    if (!realtimeIo) return false;
+    realtimeIo.in(getUserRoom(userId)).disconnectSockets(true);
+    return true;
+};
+
 export {
     emitToRole,
     emitToUsers,
+    disconnectUserSockets,
     getRoleRoom,
     getUserRoom,
     registerRealtimeIo

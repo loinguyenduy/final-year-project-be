@@ -5,7 +5,8 @@ import {
   getKycRequestDetail,
   listKycRequests
 } from '../controllers/AdminKyc.controller.js';
-import { listAdminAuditLogs } from '../controllers/AdminAudit.controller.js';
+import { getAdminAuditDetail, getAdminAuditOptions, listAdminAuditLogs } from '../controllers/AdminAudit.controller.js';
+import { getDashboard } from '../controllers/AdminDashboard.controller.js';
 import { getQueueCounts } from '../controllers/AdminQueue.controller.js';
 import {
   decideWarrantyClaimController,
@@ -55,6 +56,7 @@ const router = express.Router();
 
 router.use(checkUserJWT, requireActiveAdmin);
 
+router.get('/dashboard', getDashboard);
 router.get('/queue-counts', getQueueCounts);
 router.get('/users', listAdminUsers);
 router.get('/users/:userId', getAdminUser);
@@ -94,5 +96,7 @@ router.get('/kyc/requests/:submissionId', getKycRequestDetail);
 router.get('/kyc/requests/:submissionId/documents/:documentId/access', getKycDocumentAccess);
 router.post('/kyc/requests/:submissionId/decision', adminMutationRateLimiter, decideKycRequest);
 router.get('/audit-logs', listAdminAuditLogs);
+router.get('/audit-logs/filter-options', getAdminAuditOptions);
+router.get('/audit-logs/:auditId', getAdminAuditDetail);
 
 export default router;

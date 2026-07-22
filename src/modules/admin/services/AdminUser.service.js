@@ -14,6 +14,11 @@ import Job from '../../matchmaking/models/Job.model.js';
 import JobWarranty from '../../matchmaking/models/JobWarranty.model.js';
 import WarrantyClaim from '../../matchmaking/models/WarrantyClaim.model.js';
 import Review from '../../dispute/models/Review.model.js';
+import {
+  canonicalReviewWhere,
+  getRatingSummaries as getCanonicalRatingSummaries,
+  getRatingSummary
+} from '../../dispute/services/Rating.service.js';
 import Wallet from '../../fintech/models/Wallet.model.js';
 import Transaction from '../../fintech/models/Transaction.model.js';
 import AdminAuditLog from '../models/AdminAuditLog.model.js';
@@ -144,17 +149,6 @@ const getJobCountsForUsers = async (userIds) => {
   return result;
 };
 
-const getRatingSummaries = async (userIds) => {
-  if (!userIds.length) return new Map();
-  const rows = await Review.findAll({
-    attributes: ['reviewee_id', [fn('AVG', col('rating_stars')), 'average'], [fn('COUNT', col('id')), 'count']],
-    where: { reviewee_id: { [Op.in]: userIds } }, group: ['reviewee_id'], raw: true
-  });
-  return new Map(rows.map((row) => [row.reviewee_id, {
-    average: Number(row.average || 0).toFixed(1), count: Number(row.count || 0)
-  }]));
-};
-
 const hydrateUserPage = async (users) => {
   const plainUsers = users.map(asPlain);
   const ids = plainUsers.map((entry) => entry.id);
@@ -163,7 +157,7 @@ const hydrateUserPage = async (users) => {
     HandymanProfile.findAll({ where: { user_id: { [Op.in]: ids } }, raw: true }),
     Wallet.findAll({ where: { user_id: { [Op.in]: ids } }, attributes: ['user_id', 'wallet_type', 'balance', 'currency', 'is_blocked'], raw: true }),
     getJobCountsForUsers(ids),
-    getRatingSummaries(ids),
+    getCanonicalRatingSummaries(plainUsers.map((entry) => ({ id: entry.id, role: entry.role }))),
     AdminAuditLog.findAll({
       where: { target_type: ADMIN_AUDIT_TARGETS.USER_ACCOUNT, target_id: { [Op.in]: ids }, action: { [Op.in]: ACCOUNT_AUDIT_VALUES } },
       attributes: ['target_id', 'action', 'createdAt'], order: [['createdAt', 'DESC'], ['id', 'DESC']], raw: true
@@ -183,7 +177,7 @@ const hydrateUserPage = async (users) => {
   return plainUsers.map((user) => {
     const jobCounts = jobs.get(user.id) || { total: 0, active: 0, closed: 0, cancelled: 0 };
     const profile = profileByUser.get(user.id);
-    const rating = ratings.get(user.id) || { average: '0.0', count: 0 };
+    const rating = ratings.get(user.id);
     const lastAction = latestAudit.get(user.id);
     return {
       user_id: user.id, full_name: user.full_name, email: user.email,
@@ -194,7 +188,9 @@ const hydrateUserPage = async (users) => {
       handyman: user.role === 'HANDYMAN' ? {
         level: profile?.handyman_level || 'C0', security_bond_status: profile?.security_bond_status || 'UNPAID'
       } : null,
-      rating, job_counts: jobCounts, wallets: walletsByUser.get(user.id) || [],
+      rating_summary: rating,
+      rating: { average: rating?.raw_average || null, count: rating?.review_count || 0 },
+      job_counts: jobCounts, wallets: walletsByUser.get(user.id) || [],
       active_job_warning: jobCounts.active > 0,
       latest_account_action: lastAction ? { action: lastAction.action, occurred_at: lastAction.createdAt } : null
     };
@@ -340,7 +336,7 @@ const getAccountHistory = async (userId) => {
 const getAdminUserDetail = async ({ userId, admin, correlationId }) => {
   const user = await loadParticipant(userId);
   const ownership = user.role === 'CUSTOMER' ? { customer_id: user.id } : { selected_handyman_id: user.id };
-  const [profile, addresses, handymanServices, areas, kycDocuments, jobs, wallets, recentRatings, ratingAggregate, ratingDistribution, accountHistory, activeImpact] = await Promise.all([
+  const [profile, addresses, handymanServices, areas, kycDocuments, jobs, wallets, recentRatings, ratingSummary, accountHistory, activeImpact] = await Promise.all([
     user.role === 'HANDYMAN' ? HandymanProfile.findOne({ where: { user_id: user.id }, raw: true }) : null,
     UserAddress.findAll({
       where: { user_id: user.id }, attributes: ['id', 'province_code', 'ward_code', 'detail_address', 'full_address', 'is_default', 'createdAt', 'updatedAt'],
@@ -352,17 +348,12 @@ const getAdminUserDetail = async ({ userId, admin, correlationId }) => {
     KycRequest.findAll({ where: { user_id: user.id, submission_id: { [Op.ne]: null } }, attributes: ['id', 'submission_id', 'submission_sequence', 'document_type', 'document_mime_type', 'cloudinary_public_id', 'status', 'rejection_reason_code', 'rejection_reason_text', 'reviewed_at', 'createdAt'], include: [{ model: User, as: 'Admin', attributes: ['id', 'full_name'], required: false }], order: [['submission_sequence', 'DESC'], ['document_type', 'ASC']] }),
     Job.findAll({ where: ownership, attributes: ['id', 'current_status', 'issue_description', 'createdAt', 'updatedAt'], include: [{ model: Service, attributes: ['name'], required: false }], order: [['updatedAt', 'DESC'], ['id', 'DESC']], limit: 10 }),
     Wallet.findAll({ where: { user_id: user.id }, attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked', 'createdAt', 'updatedAt'], order: [['wallet_type', 'ASC']] }),
-    Review.findAll({ where: { reviewee_id: user.id }, attributes: ['id', 'job_id', 'rating_stars', 'is_job_successful', 'comment', 'createdAt'], order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 10 }),
-    Review.findOne({ where: { reviewee_id: user.id }, attributes: [[fn('COUNT', col('id')), 'count'], [fn('AVG', col('rating_stars')), 'average']], raw: true }),
-    Review.findAll({ where: { reviewee_id: user.id }, attributes: ['rating_stars', [fn('COUNT', col('id')), 'count']], group: ['rating_stars'], raw: true }),
+    Review.findAll({ where: canonicalReviewWhere({ reviewee_id: user.id }), attributes: ['id', 'job_id', 'rating_stars', 'is_job_successful', 'comment', 'createdAt'], order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 10 }),
+    getRatingSummary(user.id, user.role),
     getAccountHistory(user.id),
     getActiveJobImpact(user)
   ]);
   const walletStats = await getWalletLedgerStats(wallets);
-  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  ratingDistribution.forEach((entry) => { distribution[entry.rating_stars] = Number(entry.count || 0); });
-  const ratingCount = Number(ratingAggregate?.count || 0);
-  const average = ratingCount ? Number(ratingAggregate.average || 0).toFixed(1) : '0.0';
   const jobCounts = (await getJobCountsForUsers([user.id])).get(user.id) || { total: 0, active: 0, closed: 0, cancelled: 0 };
   logSensitiveAdminRead({ adminId: admin.id, userId: user.id, resourceType: 'USER_DETAIL', correlationId });
   const action = user.is_active ? ACCOUNT_ACTIONS.DEACTIVATE : ACCOUNT_ACTIONS.REACTIVATE;
@@ -385,7 +376,12 @@ const getAdminUserDetail = async ({ userId, admin, correlationId }) => {
     job_summary: jobCounts,
     recent_jobs: jobs.map((entry) => ({ job_id: entry.id, status: entry.current_status, service_name: entry.Service?.name || null, issue_summary: String(entry.issue_description || '').slice(0, 100), created_at: entry.createdAt, updated_at: entry.updatedAt })),
     wallets: wallets.map((entry) => ({ wallet_type: entry.wallet_type, currency: entry.currency, available_balance: decimal(entry.balance), status: entry.is_blocked ? 'BLOCKED' : 'ACTIVE', ...walletStats.get(entry.id) })),
-    ratings: { average, count: ratingCount, distribution, recent: recentRatings.map((entry) => ({ review_id: entry.id, job_id: entry.job_id, rating_stars: entry.rating_stars, is_job_successful: entry.is_job_successful, comment: entry.comment, created_at: entry.createdAt })) },
+    ratings: {
+      ...ratingSummary,
+      average: ratingSummary.raw_average || '0.0',
+      count: ratingSummary.review_count,
+      recent: recentRatings.map((entry) => ({ review_id: entry.id, job_id: entry.job_id, rating_stars: entry.rating_stars, is_job_successful: entry.is_job_successful, comment: entry.comment, created_at: entry.createdAt }))
+    },
     account_status_history: accountHistory,
     active_job_impact: activeImpact,
     allowed_admin_actions: [action],

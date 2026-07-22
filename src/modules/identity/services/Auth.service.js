@@ -10,7 +10,7 @@ import VerificationToken from "../models/VerificationToken.model.js";
 import { sendVerificationEmail } from "../../../core/utils/mail.util.js";
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
 import HandymanProfile from "../models/HandymanProfile.model.js";
-import Wallet from '../../fintech/models/Wallet.model.js';
+import { getCanonicalProfile } from './ParticipantRead.service.js';
 import { getRefreshCookieOptions } from '../utils/authCookie.util.js';
 import { createAdminAuditLog } from '../../admin/services/AdminAudit.service.js';
 import { ADMIN_AUDIT_ACTIONS, ADMIN_AUDIT_TARGETS } from '../../admin/constants/admin.constants.js';
@@ -199,16 +199,7 @@ const handleLoginUser = async (inputUserData, options = {}) => {
           { phone_number: inputUserData.valueLogin },
         ],
       },
-      include: [
-        {
-          model: HandymanProfile,
-          attributes: ['handyman_level', 'bayesian_score', 'total_jobs_completed', 'security_bond_status']
-        },
-        {
-          model: Wallet,
-          attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked']
-        }
-      ]
+      attributes: ['id', 'full_name', 'email', 'phone_number', 'role', 'is_active', 'is_email_verified', 'kyc_status', 'avatar_url', 'auth_version', 'createdAt']
     });
 
     if (!user) {
@@ -282,8 +273,14 @@ const handleLoginUser = async (inputUserData, options = {}) => {
 
     const session = await issueSession(user, isAdminLogin ? options.auditContext : null);
 
-    const userData = user.get({ plain: true });
-    delete userData.auth_version;
+    const userData = isAdminLogin
+      ? {
+        id: user.id, full_name: user.full_name, email: user.email,
+        phone_number: user.phone_number || null, role: user.role,
+        avatar_url: user.avatar_url || null, is_email_verified: Boolean(user.is_email_verified),
+        kyc_status: user.kyc_status, is_active: Boolean(user.is_active), created_at: user.createdAt
+      }
+      : await getCanonicalProfile(user.id);
 
     return {
       EM: "Login successfully.",
@@ -604,4 +601,4 @@ const handleResendVerifyEmail = async (email) => {
 };
 
 
-export { handleRegisterUser, handleLoginUser, handleRefreshToken, handleLogout, handleVerifyEmail, handleResendVerifyEmail };
+export { checkPassword, hashUserPassword, handleRegisterUser, handleLoginUser, handleRefreshToken, handleLogout, handleVerifyEmail, handleResendVerifyEmail };

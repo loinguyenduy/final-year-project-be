@@ -11,6 +11,7 @@ import Ward from '../../matchmaking/models/Ward.model.js';
 import HandymanService from '../../matchmaking/models/HandymanService.model.js';
 import HandymanServiceArea from '../../matchmaking/models/HandymanServiceArea.model.js';
 import { KYC_REJECTION_MESSAGES } from '../constants/kyc.constants.js';
+import { getCanonicalProfile } from './ParticipantRead.service.js';
 
 const VALID_WORK_TIMES = ['MORNING', 'AFTERNOON', 'EVENING', 'WEEKEND'];
 
@@ -18,84 +19,10 @@ const VALID_WORK_TIMES = ['MORNING', 'AFTERNOON', 'EVENING', 'WEEKEND'];
 
 const getDetailedProfileService = async (userId) => {
     try {
-        const userProfile = await User.findByPk(userId, {
-            attributes: ['id', 'full_name', 'email', 'phone_number', 'role', 'is_active', 'avatar_url', 'is_email_verified', 'kyc_status'],
-            include: [
-                {
-                    model: HandymanProfile,
-                    attributes: [
-                        'handyman_level',
-                        'bayesian_score',
-                        'total_jobs_completed',
-                        'accepted_cancellation_count',
-                        'security_bond_status',
-                        'bio',
-                        'preferred_work_times'
-                    ]
-                },
-                {
-                    model: Wallet,
-                    attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked']
-                },
-                {
-                    model: AuthProvider,
-                    attributes: ['id', 'provider']
-                },
-                {
-                    model: UserAddress,
-                    attributes: [
-                        'id', 'province_code', 'ward_code', 'detail_address',
-                        'full_address', 'gps_lat', 'gps_long', 'is_default'
-                    ],
-                    include: [
-                        { model: Province, attributes: ['province_code', 'name', 'short_name'] },
-                        { model: Ward, attributes: ['ward_code', 'name'] }
-                    ]
-                },
-                {
-                    model: KycRequest,
-                    as: 'KycDocuments',
-                    attributes: [
-                        'id', 'submission_id', 'submission_sequence', 'document_type',
-                        'status', 'rejection_reason_code', 'rejection_reason_text',
-                        'reviewed_at', 'createdAt'
-                    ]
-                },
-                {
-                    model: HandymanService,
-                    as: 'Handyman_Services',
-                    attributes: ['id', 'service_id'],
-                    include: [{ model: Service, attributes: ['id', 'name', 'icon_url', 'service_code', 'is_active'] }]
-                },
-                {
-                    model: HandymanServiceArea,
-                    as: 'Handyman_Service_Areas',
-                    attributes: ['id', 'province_code', 'ward_code'],
-                    include: [
-                        { model: Province, attributes: ['province_code', 'name', 'short_name'] },
-                        { model: Ward, attributes: ['ward_code', 'name'], required: false }
-                    ]
-                }
-            ]
-        });
-
-        if (!userProfile) {
+        const profile = await getCanonicalProfile(userId);
+        if (!profile) {
             return { EM: "User profile not found.", EC: 404, DT: "" };
         }
-
-        const profile = userProfile.get({ plain: true });
-        const latestDocument = [...(profile.KycDocuments || [])]
-            .filter(document => document.submission_id)
-            .sort((left, right) => (right.submission_sequence || 0) - (left.submission_sequence || 0))[0];
-        profile.kyc_rejection = profile.kyc_status === 'REJECTED' && latestDocument
-            ? {
-                reason_code: latestDocument.rejection_reason_code,
-                message: KYC_REJECTION_MESSAGES[latestDocument.rejection_reason_code]
-                    || 'The KYC submission could not be verified.',
-                reason_text: latestDocument.rejection_reason_text
-            }
-            : null;
-
         return { EM: "Fetch user profile successfully.", EC: 0, DT: profile };
 
     } catch (error) {

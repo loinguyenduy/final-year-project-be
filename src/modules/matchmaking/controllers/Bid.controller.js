@@ -54,8 +54,8 @@ const handleWithdrawBid = async (req, res) => {
 const handleGetMyBids = async (req, res) => {
     try {
         const handymanId = req.user.id;
-        const result = await getMyBidsService(handymanId);
-        return res.status(result.EC === 0 ? 200 : 500).json(result);
+        const result = await getMyBidsService(handymanId, req.query);
+        return res.status(result.EC === 0 ? 200 : (result.EC === 400 ? 400 : 500)).json(result);
     } catch (error) {
         console.log(">>> Error in handleGetMyBids: ", error);
         return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: [] });

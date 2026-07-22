@@ -1,6 +1,7 @@
-import { fn, col, Op } from 'sequelize';
+import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
-import Review from '../../dispute/models/Review.model.js';
+import { getRatingSummary } from '../../dispute/services/Rating.service.js';
+import { getReviewState } from '../../dispute/services/Review.service.js';
 import EvidenceVault from '../../fintech/models/EvidenceVault.model.js';
 import EContract from '../../fintech/models/EContract.model.js';
 import Transaction from '../../fintech/models/Transaction.model.js';
@@ -61,20 +62,7 @@ const isValidUuid = (value) => UUID_PATTERN.test(String(value || ''));
 const toNumber = (value) => Number(value || 0);
 
 const getPartnerMetrics = async (userId, role, options = {}) => {
-    const reviewSummary = await Review.findOne({
-        attributes: [
-            [fn('AVG', col('rating_stars')), 'rating'],
-            [fn('COUNT', col('id')), 'review_count']
-        ],
-        where: { reviewee_id: userId },
-        raw: true,
-        ...options
-    });
-
-    const reviewCount = Number(reviewSummary?.review_count || 0);
-    const rating = reviewCount > 0
-        ? Number(Number(reviewSummary.rating).toFixed(1))
-        : null;
+    const ratingSummary = await getRatingSummary(userId, role);
 
     let completedCount = 0;
     let cancelledCount = 0;
@@ -117,8 +105,9 @@ const getPartnerMetrics = async (userId, role, options = {}) => {
         : null;
 
     return {
-        rating,
-        review_count: reviewCount,
+        rating: ratingSummary.bayesian_rating,
+        review_count: ratingSummary.review_count,
+        rating_summary: ratingSummary,
         completion_rate: completionRate
     };
 };
@@ -738,6 +727,9 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                 ? loadWarrantyLifecycle(job)
                 : Promise.resolve(null)
         ]);
+        const reviewState = isAdmin
+            ? { status: 'NOT_AVAILABLE', eligible: false, allowed_actions: [], review: null, reviewee: null }
+            : await getReviewState({ job, actor: currentUser });
         if (job.current_status === 'WARRANTY' && !warrantyLifecycle?.warranty) {
             return serviceError(
                 'Warranty lifecycle data is inconsistent.',
@@ -911,6 +903,7 @@ const getAcceptedDetailsService = async (jobId, currentUser) => {
                     { includeAdmin: isAdmin, isCustomer, isSelectedHandyman }
                 ),
                 cancellation: buildCancellationDto(currentCancellation),
+                review_state: reviewState,
                 allowed_actions: buildAllowedActions({
                     job,
                     isCustomer,

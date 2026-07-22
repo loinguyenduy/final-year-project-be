@@ -36,8 +36,14 @@ const adminMutationRateLimiter = createLimiter({
   maxRequests: positiveInteger(process.env.ADMIN_MUTATION_RATE_LIMIT_MAX_REQUESTS, 30)
 });
 
+const passwordActionRateLimiter = createLimiter({
+  windowMinutes: positiveInteger(process.env.PASSWORD_ACTION_RATE_LIMIT_WINDOW_MINUTES, 15),
+  maxRequests: positiveInteger(process.env.PASSWORD_ACTION_RATE_LIMIT_MAX_REQUESTS, 5)
+});
+
 export {
   adminLoginRateLimiter,
   adminMutationRateLimiter,
+  passwordActionRateLimiter,
   participantLoginRateLimiter
 };

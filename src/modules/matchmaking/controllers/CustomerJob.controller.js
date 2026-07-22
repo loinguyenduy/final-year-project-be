@@ -108,10 +108,11 @@ const handleCreateJob = async (req, res) => {
 const handleGetCustomerJobs = async (req, res) => {
     try {
         const userId = req.user.id;
-        const result = await getCustomerJobsService(userId);
-        return res.status(result.EC === 0 ? 200 : 500).json({ 
+        const result = await getCustomerJobsService(userId, req.query);
+        return res.status(result.EC === 0 ? 200 : (result.EC === 400 ? 400 : 500)).json({
               EM: result.EM,
               EC: result.EC,
+              code: result.code,
               DT: result.DT
         });
     } catch (error) {

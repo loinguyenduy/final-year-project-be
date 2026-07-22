@@ -19,6 +19,9 @@ import {
     JOB_LIFECYCLE_EVENTS,
     emitJobLifecycleEvent
 } from '../sockets/JobLifecycle.gateway.js';
+import { Op } from 'sequelize';
+import { getReviewStateMap } from '../../dispute/services/Review.service.js';
+import { actionForStatus, ACTIVE_STATUSES } from '../../identity/services/ParticipantRead.service.js';
 
 const EARLY_CANCELLATION_REASONS = Object.freeze([
     'NO_LONGER_NEEDED',
@@ -681,10 +684,58 @@ const cancelPreAcceptanceJobService = async (userId, jobId, payload) => {
     }
 };
 
-const getCustomerJobsService = async (userId) => {
+const getCustomerJobsService = async (userId, query = {}) => {
     try {
-        const jobs = await Job.findAll({
-            where: { customer_id: userId },
+        const page = Math.max(1, Number.parseInt(query.page || '1', 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(query.page_size || '20', 10) || 20));
+        const view = String(query.view || 'ALL').toUpperCase();
+        const status = String(query.status || 'ALL').toUpperCase();
+        const sort = String(query.sort || 'UPDATED_DESC').toUpperCase();
+        const validViews = ['ALL', 'NEEDS_ACTION', 'ACTIVE', 'CLOSED', 'CANCELLED'];
+        const validSorts = ['UPDATED_DESC', 'CREATED_DESC', 'CREATED_ASC', 'SCHEDULED_ASC', 'SCHEDULED_DESC'];
+        const statuses = Job.rawAttributes.current_status.values;
+        if (!validViews.includes(view) || !validSorts.includes(sort) || (status !== 'ALL' && !statuses.includes(status))) {
+            return serviceError('My Jobs filters are invalid.', 400, 'VALIDATION_ERROR');
+        }
+        const statusWhere = status !== 'ALL' ? status
+            : view === 'ACTIVE' ? { [Op.in]: ACTIVE_STATUSES }
+                : view === 'CLOSED' ? 'CLOSED'
+                    : view === 'CANCELLED' ? 'CANCELLED'
+                        : undefined;
+        const order = {
+            UPDATED_DESC: [['updatedAt', 'DESC'], ['id', 'DESC']], CREATED_DESC: [['createdAt', 'DESC'], ['id', 'DESC']],
+            CREATED_ASC: [['createdAt', 'ASC'], ['id', 'ASC']], SCHEDULED_ASC: [['scheduled_at', 'ASC'], ['id', 'ASC']],
+            SCHEDULED_DESC: [['scheduled_at', 'DESC'], ['id', 'DESC']]
+        }[sort];
+        let needsActionTotal = null;
+        let needsActionPageIds = null;
+        if (view === 'NEEDS_ACTION') {
+            const actionStatuses = statuses.filter((entry) => actionForStatus(entry, 'CUSTOMER'));
+            const candidates = await Job.findAll({
+                where: {
+                    customer_id: userId,
+                    current_status: status !== 'ALL' ? status : { [Op.in]: [...new Set([...actionStatuses, 'CLOSED'])] }
+                },
+                attributes: ['id', 'current_status', 'acceptance_cycle', 'customer_id', 'selected_handyman_id', 'createdAt', 'updatedAt', 'scheduled_at'],
+                order
+            });
+            const candidateStates = await getReviewStateMap({ jobs: candidates, actor: { id: userId, role: 'CUSTOMER' } });
+            const actionable = candidates.filter((entry) => candidateStates.get(entry.id)?.status === 'PENDING'
+                || Boolean(actionForStatus(entry.current_status, 'CUSTOMER')));
+            needsActionTotal = actionable.length;
+            needsActionPageIds = actionable
+                .slice((page - 1) * pageSize, page * pageSize)
+                .map((entry) => entry.id);
+            if (!needsActionPageIds.length) {
+                return { EM: 'Customer jobs retrieved successfully.', EC: 0, DT: { items: [], pagination: { page, page_size: pageSize, total_items: needsActionTotal, total_pages: Math.ceil(needsActionTotal / pageSize) }, filters: { view, status, sort } } };
+            }
+        }
+        const { rows: jobs, count } = await Job.findAndCountAll({
+            where: {
+                customer_id: userId,
+                ...(statusWhere ? { current_status: statusWhere } : {}),
+                ...(needsActionPageIds ? { id: { [Op.in]: needsActionPageIds } } : {})
+            },
             attributes: {
                 exclude: ['en_route_gps_lat', 'en_route_gps_long']
             },
@@ -709,12 +760,24 @@ const getCustomerJobsService = async (userId) => {
                     ]
                 }
             ],
-            order: [['createdAt', 'DESC']]
+            order,
+            limit: pageSize,
+            offset: needsActionPageIds ? 0 : (page - 1) * pageSize,
+            distinct: true
         });
+        const actor = { id: userId, role: 'CUSTOMER' };
+        const reviewStates = await getReviewStateMap({ jobs, actor });
+        const items = jobs.map((job) => {
+            const data = job.get({ plain: true });
+            const review = reviewStates.get(job.id) || { status: 'NOT_AVAILABLE' };
+            const actionLabel = review.status === 'PENDING' ? 'Rate your handyman' : actionForStatus(job.current_status, 'CUSTOMER');
+            return { ...data, needs_action: Boolean(actionLabel), action_summary: actionLabel ? { label: actionLabel, destination: `/customer/my-jobs/${job.id}` } : null, review_state: review.status };
+        });
+        const filtered = view === 'NEEDS_ACTION' ? items.filter((item) => item.needs_action) : items;
         return { 
           EM: "Customer jobs retrieved successfully.", 
           EC: 0, 
-          DT: jobs 
+          DT: { items: filtered, pagination: { page, page_size: pageSize, total_items: needsActionTotal ?? count, total_pages: Math.ceil((needsActionTotal ?? count) / pageSize) }, filters: { view, status, sort } }
         };
     } catch (error) {
         console.log(">>> Error in getCustomerJobsService: ", error);

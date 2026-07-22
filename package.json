@@ -12,6 +12,7 @@
     "admin:review:test:manual": "node scripts/admin/manualAdminReviewCenterTest.js",
     "admin:phase3:test:manual": "node scripts/admin/manualAdminUsersWalletsServicesTest.js",
     "admin:phase4:test:manual": "node scripts/admin/manualAdminDashboardAuditTest.js",
+    "participant:phase5:test:manual": "node scripts/participant/manualParticipantExperienceReviewsTest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

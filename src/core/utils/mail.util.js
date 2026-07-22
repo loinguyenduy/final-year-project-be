@@ -12,6 +12,11 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+const frontendUrl = () => String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+const escapeHtml = (value) => String(value || '')
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+
 const sendVerificationEmail = async (toEmail, fullName, verifyToken) => {
   const verificationLink = `http://localhost:5173/verify-email?token=${verifyToken}`;
 
@@ -44,4 +49,33 @@ const sendVerificationEmail = async (toEmail, fullName, verifyToken) => {
   }
 };
 
-export { sendVerificationEmail };
+const sendPasswordActionEmail = async ({ toEmail, fullName, rawToken, purpose, expiresInMinutes }) => {
+  const isSet = purpose === 'SET_PASSWORD';
+  const path = isSet ? '/set-password' : '/reset-password';
+  const action = isSet ? 'Set Password' : 'Reset Password';
+  const link = `${frontendUrl()}${path}#token=${encodeURIComponent(rawToken)}`;
+  await transporter.sendMail({
+    from: `"The Trusted Handyman" <${process.env.EMAIL_FROM}>`,
+    to: toEmail,
+    subject: `${action} for your account`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px">
+      <h2>${action}</h2><p>Hi <strong>${escapeHtml(fullName)}</strong>,</p>
+      <p>Use the secure button below to ${action.toLowerCase()}. The link expires in ${expiresInMinutes} minutes and can be used once.</p>
+      <p style="margin:28px 0"><a href="${link}" style="background:#f97316;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none">${action}</a></p>
+      <p>If you did not request this action, you can ignore this email.</p>
+    </div>`
+  });
+};
+
+const sendPasswordChangedEmail = async ({ toEmail, fullName }) => transporter.sendMail({
+  from: `"The Trusted Handyman" <${process.env.EMAIL_FROM}>`,
+  to: toEmail,
+  subject: 'Your password was changed',
+  html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px">
+    <h2>Password changed</h2><p>Hi <strong>${escapeHtml(fullName)}</strong>,</p>
+    <p>Your password was changed successfully and existing sessions were signed out.</p>
+    <p>If this was not you, contact support immediately.</p>
+  </div>`
+});
+
+export { sendPasswordActionEmail, sendPasswordChangedEmail, sendVerificationEmail };

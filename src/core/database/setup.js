@@ -7,6 +7,7 @@ import KycRequest from '../../modules/identity/models/KycRequest.model.js';
 import HandymanProfile from '../../modules/identity/models/HandymanProfile.model.js';
 import VerificationToken from '../../modules/identity/models/VerificationToken.model.js';
 import RefreshToken from '../../modules/identity/models/RefreshToken.model.js';
+import PasswordActionToken from '../../modules/identity/models/PasswordActionToken.model.js';
 import AdminAuditLog from '../../modules/admin/models/AdminAuditLog.model.js';
 
 import Province from '../../modules/matchmaking/models/Province.model.js';
@@ -55,6 +56,9 @@ KycRequest.belongsTo(User, { as: 'Admin', foreignKey: 'reviewed_by_admin_id' });
 
 User.hasMany(RefreshToken, { foreignKey: 'user_id' });
 RefreshToken.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(PasswordActionToken, { foreignKey: 'user_id' });
+PasswordActionToken.belongsTo(User, { foreignKey: 'user_id' });
 
 User.hasMany(AdminAuditLog, {
     as: 'AdminAuditLogs',
@@ -914,6 +918,44 @@ const verifyAdminManagementSchema = async () => {
     console.log('Admin User, Wallet and Service schema verified successfully.');
 };
 
+const verifyParticipantExperienceSchema = async () => {
+    const [columns] = await db.query(`
+        SELECT table_name, column_name, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND ((table_name = 'Password_Action_Tokens' AND column_name IN
+            ('id', 'user_id', 'purpose', 'token_hash', 'issued_auth_version', 'expires_at', 'consumed_at', 'revoked_at'))
+          OR (table_name = 'Reviews' AND column_name IN ('acceptance_cycle', 'reviewer_role', 'reviewee_role')))
+    `);
+    const found = new Set(columns.map((entry) => `${entry.table_name}.${entry.column_name}`));
+    const required = [
+        'Password_Action_Tokens.id', 'Password_Action_Tokens.user_id', 'Password_Action_Tokens.purpose',
+        'Password_Action_Tokens.token_hash', 'Password_Action_Tokens.issued_auth_version',
+        'Password_Action_Tokens.expires_at', 'Password_Action_Tokens.consumed_at', 'Password_Action_Tokens.revoked_at',
+        'Reviews.acceptance_cycle', 'Reviews.reviewer_role', 'Reviews.reviewee_role'
+    ];
+    const missing = required.filter((entry) => !found.has(entry));
+    if (missing.length) throw new Error(`Required Phase 5 columns are missing: ${missing.join(', ')}. Run one backed-up instance with DB_SYNC_ALTER=true.`);
+    const requiredIndexes = [
+        'password_action_tokens_user_purpose_expiry', 'password_action_tokens_hash_unique',
+        'reviews_canonical_job_cycle_parties_unique', 'reviews_reviewee_created_id', 'reviews_reviewer_created_id'
+    ];
+    const [indexes] = await db.query(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})`);
+    const indexSet = new Set(indexes.map((entry) => entry.indexname));
+    const missingIndexes = requiredIndexes.filter((name) => !indexSet.has(name));
+    if (missingIndexes.length) throw new Error(`Required Phase 5 indexes are missing: ${missingIndexes.join(', ')}. Run one backed-up instance with DB_SYNC_ALTER=true.`);
+    const [reviewCounts] = await db.query(`
+        SELECT
+          COUNT(*)::integer AS total_reviews,
+          COUNT(*) FILTER (WHERE acceptance_cycle IS NOT NULL AND reviewer_role IN ('CUSTOMER','HANDYMAN') AND reviewee_role IN ('CUSTOMER','HANDYMAN') AND reviewer_role <> reviewee_role AND rating_stars BETWEEN 1 AND 5)::integer AS canonical_candidates,
+          COUNT(*) FILTER (WHERE acceptance_cycle IS NULL)::integer AS missing_cycle,
+          COUNT(*) FILTER (WHERE reviewer_role IS NULL OR reviewee_role IS NULL)::integer AS missing_roles,
+          COUNT(*) FILTER (WHERE rating_stars NOT BETWEEN 1 AND 5 OR acceptance_cycle < 1 OR reviewer_role NOT IN ('CUSTOMER','HANDYMAN') OR reviewee_role NOT IN ('CUSTOMER','HANDYMAN') OR reviewer_role = reviewee_role)::integer AS invalid_canonical_fields
+        FROM "Reviews"
+    `);
+    console.log('Participant Experience schema verified successfully.', reviewCounts[0]);
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -947,6 +989,7 @@ const initDatabase = async () => {
         await verifyAdminReviewSchema();
         await verifyAdminJobIndexes();
         await verifyAdminManagementSchema();
+        await verifyParticipantExperienceSchema();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

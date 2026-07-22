@@ -41,6 +41,7 @@ import { AdminReviewError, isValidUuid } from '../utils/adminReviewValidation.ut
 import { logSensitiveAdminRead } from './AdminSecurityReadLog.service.js';
 import { calculateCompletionSplit } from '../../fintech/utils/completionSettlement.util.js';
 import { parseVndInteger } from '../../matchmaking/utils/cancellationPolicy.util.js';
+import { getRatingSummaries } from '../../dispute/services/Rating.service.js';
 
 const JOB_STATUSES = new Set(Job.rawAttributes.current_status.values || []);
 const REVIEW_TYPES = new Set([...Object.values(REVIEW_CASE_TYPES), 'ALL']);
@@ -895,7 +896,7 @@ const loadJobOrThrow = async (jobId) => {
 
 const loadParticipants = async (job) => {
   const ids = [job.customer_id, job.selected_handyman_id].filter(Boolean);
-  const [addresses, wallets, handymanProfile] = await Promise.all([
+  const [addresses, wallets, handymanProfile, ratings] = await Promise.all([
     UserAddress.findAll({
       where: { user_id: { [Op.in]: ids } },
       include: [
@@ -910,7 +911,11 @@ const loadParticipants = async (job) => {
       order: [['wallet_type', 'ASC']]
     }),
     job.selected_handyman_id
-      ? HandymanProfile.findOne({ where: { user_id: job.selected_handyman_id } }) : null
+      ? HandymanProfile.findOne({ where: { user_id: job.selected_handyman_id } }) : null,
+    getRatingSummaries([
+      job.Customer ? { id: job.Customer.id, role: 'CUSTOMER' } : null,
+      job.SelectedHandyman ? { id: job.SelectedHandyman.id, role: 'HANDYMAN' } : null
+    ].filter(Boolean))
   ]);
   const addressesByUser = groupBy(addresses, 'user_id');
   const walletsByUser = groupBy(wallets, 'user_id');
@@ -934,11 +939,11 @@ const loadParticipants = async (job) => {
     }))
   } : null;
   return {
-    customer: decorate(job.Customer),
+    customer: job.Customer ? { ...decorate(job.Customer), rating_summary: ratings.get(job.Customer.id) } : null,
     handyman: job.SelectedHandyman ? {
       ...decorate(job.SelectedHandyman),
       profile: handymanProfile ? {
-        bayesian_score: decimal(handymanProfile.bayesian_score),
+        rating_summary: ratings.get(job.SelectedHandyman.id),
         total_jobs_completed: handymanProfile.total_jobs_completed,
         accepted_cancellation_count: handymanProfile.accepted_cancellation_count,
         security_bond_status: handymanProfile.security_bond_status,

@@ -4,6 +4,7 @@ import AuthProvider from "../models/AuthProvider.model.js";
 import RefreshToken from "../models/RefreshToken.model.js";
 import { createAccessToken, createRefreshToken } from "../../../core/utils/jwt.util.js";
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
+import { getCanonicalProfile } from './ParticipantRead.service.js';
 import { getRefreshCookieOptions } from '../utils/authCookie.util.js';
 
 const upsertGoogleUser = async (googleProfile) => {
@@ -111,7 +112,7 @@ const upsertGoogleUser = async (googleProfile) => {
       DT: {
         access_token: accessToken,
         refresh_token: refreshToken,
-        user: (() => { const value = user.get({ plain: true }); delete value.auth_version; return value; })(),
+        user: await getCanonicalProfile(user.id),
       },
     };
   } catch (error) {
@@ -217,7 +218,7 @@ const upsertFacebookUser = async (facebookProfile) => {
     return {
       EM: "Facebook login successfully",
       EC: 0,
-      DT: { access_token: accessToken, refresh_token: refreshToken, user: (() => { const value = user.get({ plain: true }); delete value.auth_version; return value; })() },
+      DT: { access_token: accessToken, refresh_token: refreshToken, user: await getCanonicalProfile(user.id) },
     };
   } catch (error) {
     await t.rollback();

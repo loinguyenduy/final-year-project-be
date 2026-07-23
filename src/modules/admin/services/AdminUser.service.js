@@ -189,7 +189,7 @@ const hydrateUserPage = async (users) => {
         level: profile?.handyman_level || 'C0', security_bond_status: profile?.security_bond_status || 'UNPAID'
       } : null,
       rating_summary: rating,
-      rating: { average: rating?.raw_average || null, count: rating?.review_count || 0 },
+      rating: { average: rating?.average_rating || null, count: rating?.review_count || 0 },
       job_counts: jobCounts, wallets: walletsByUser.get(user.id) || [],
       active_job_warning: jobCounts.active > 0,
       latest_account_action: lastAction ? { action: lastAction.action, occurred_at: lastAction.createdAt } : null
@@ -378,7 +378,7 @@ const getAdminUserDetail = async ({ userId, admin, correlationId }) => {
     wallets: wallets.map((entry) => ({ wallet_type: entry.wallet_type, currency: entry.currency, available_balance: decimal(entry.balance), status: entry.is_blocked ? 'BLOCKED' : 'ACTIVE', ...walletStats.get(entry.id) })),
     ratings: {
       ...ratingSummary,
-      average: ratingSummary.raw_average || '0.0',
+      average: ratingSummary.average_rating,
       count: ratingSummary.review_count,
       recent: recentRatings.map((entry) => ({ review_id: entry.id, job_id: entry.job_id, rating_stars: entry.rating_stars, is_job_successful: entry.is_job_successful, comment: entry.comment, created_at: entry.createdAt }))
     },

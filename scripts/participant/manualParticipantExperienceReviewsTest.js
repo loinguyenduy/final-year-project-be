@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import db from '../../src/core/database/connection.js';
+import { getRatingSummary } from '../../src/modules/dispute/services/Rating.service.js';
 
 const enabled = process.env.ALLOW_MANUAL_PARTICIPANT_READ_TEST === 'true';
 if (process.env.NODE_ENV === 'production' || !enabled) {
@@ -35,6 +36,30 @@ if (process.env.NODE_ENV === 'production' || !enabled) {
       ? reviewRows[0]
       : { ...reviewRows[0], canonical: 0, missing_cycle: reviewRows[0].total, missing_role: reviewRows[0].total, invalid_rating: null, note: 'Additive Review columns are not deployed yet.' };
     console.log(JSON.stringify({ schema_columns: schemaRows, review_counts: counts }, null, 2));
+    if (hasCanonicalColumns && Number(counts.canonical) > 0) {
+      const [sampleRows] = await db.query(`
+        SELECT reviewee_id, reviewee_role, COUNT(*)::integer AS review_count,
+          ROUND(AVG(rating_stars)::numeric, 2)::text AS average_rating
+        FROM "Reviews"
+        WHERE acceptance_cycle >= 1
+          AND reviewer_role IN ('CUSTOMER','HANDYMAN')
+          AND reviewee_role IN ('CUSTOMER','HANDYMAN')
+          AND reviewer_role <> reviewee_role AND reviewer_id <> reviewee_id
+          AND rating_stars BETWEEN 1 AND 5
+        GROUP BY reviewee_id, reviewee_role
+        ORDER BY review_count DESC, reviewee_id
+        LIMIT 1
+      `);
+      const sample = sampleRows[0];
+      const rating = await getRatingSummary(sample.reviewee_id, sample.reviewee_role);
+      if (rating.review_count !== sample.review_count || rating.average_rating !== sample.average_rating) {
+        throw new Error(`Arithmetic rating mismatch: SQL=${sample.average_rating}/${sample.review_count}, service=${rating.average_rating}/${rating.review_count}`);
+      }
+      if ('bayesian_rating' in rating || 'rating_status' in rating || 'raw_average' in rating) {
+        throw new Error('Legacy Bayesian rating fields are still present in the canonical DTO.');
+      }
+      console.log(JSON.stringify({ arithmetic_rating_sample: { ...sample, service: rating } }, null, 2));
+    }
     const token = process.env.PARTICIPANT_ACCESS_TOKEN;
     const baseUrl = process.env.API_BASE_URL || 'http://localhost:5000/api/v1';
     if (token) {

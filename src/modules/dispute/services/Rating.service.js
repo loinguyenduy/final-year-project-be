@@ -3,10 +3,6 @@ import Review from '../models/Review.model.js';
 import User from '../../identity/models/User.model.js';
 
 const PARTICIPANT_ROLES = ['CUSTOMER', 'HANDYMAN'];
-const BAYESIAN_WEIGHT = (() => {
-  const value = Number.parseInt(process.env.BAYESIAN_RATING_MIN_REVIEWS || '5', 10);
-  return Number.isInteger(value) && value > 0 ? value : 5;
-})();
 
 const canonicalReviewWhere = (extra = {}) => ({
   job_id: { [Op.ne]: null },
@@ -34,9 +30,7 @@ const formatRatio = (numerator, denominator, decimals = 2) => {
 
 const emptySummary = () => ({
   review_count: 0,
-  raw_average: null,
-  bayesian_rating: null,
-  rating_status: 'NO_REVIEWS',
+  average_rating: null,
   distribution: { '5': 0, '4': 0, '3': 0, '2': 0, '1': 0 }
 });
 
@@ -44,23 +38,20 @@ const getRatingSummaries = async (targets = []) => {
   const normalized = targets.filter((target) => target?.id && PARTICIPANT_ROLES.includes(target.role));
   const result = new Map(normalized.map((target) => [target.id, emptySummary()]));
   if (!normalized.length) return result;
-  const targetIds = [...new Set(normalized.map((target) => target.id))];
-  const [roleTotals, userTotals, distributions] = await Promise.all([
+  const targetScope = {
+    [Op.or]: normalized.map((target) => ({ reviewee_id: target.id, reviewee_role: target.role }))
+  };
+  const [userTotals, distributions] = await Promise.all([
     Review.findAll({
-      attributes: ['reviewee_role', [fn('COUNT', col('id')), 'count'], [fn('SUM', col('rating_stars')), 'sum']],
-      where: canonicalReviewWhere(), group: ['reviewee_role'], raw: true
-    }),
-    Review.findAll({
-      attributes: ['reviewee_id', 'reviewee_role', [fn('COUNT', col('id')), 'count'], [fn('SUM', col('rating_stars')), 'sum']],
-      where: canonicalReviewWhere({ reviewee_id: { [Op.in]: targetIds } }), group: ['reviewee_id', 'reviewee_role'], raw: true
+      attributes: ['reviewee_id', [fn('COUNT', col('id')), 'count'], [fn('SUM', col('rating_stars')), 'sum']],
+      where: canonicalReviewWhere(targetScope), group: ['reviewee_id'], raw: true
     }),
     Review.findAll({
       attributes: ['reviewee_id', 'rating_stars', [fn('COUNT', col('id')), 'count']],
-      where: canonicalReviewWhere({ reviewee_id: { [Op.in]: targetIds } }), group: ['reviewee_id', 'rating_stars'], raw: true
+      where: canonicalReviewWhere(targetScope), group: ['reviewee_id', 'rating_stars'], raw: true
     })
   ]);
-  const totalsByRole = new Map(roleTotals.map((entry) => [entry.reviewee_role, { count: BigInt(entry.count || 0), sum: BigInt(entry.sum || 0) }]));
-  const byUser = new Map(userTotals.map((entry) => [entry.reviewee_id, { role: entry.reviewee_role, count: BigInt(entry.count || 0), sum: BigInt(entry.sum || 0) }]));
+  const byUser = new Map(userTotals.map((entry) => [entry.reviewee_id, { count: BigInt(entry.count || 0), sum: BigInt(entry.sum || 0) }]));
   const distributionByUser = new Map();
   distributions.forEach((entry) => {
     if (!distributionByUser.has(entry.reviewee_id)) distributionByUser.set(entry.reviewee_id, { '5': 0, '4': 0, '3': 0, '2': 0, '1': 0 });
@@ -70,23 +61,11 @@ const getRatingSummaries = async (targets = []) => {
   normalized.forEach((target) => {
     const own = byUser.get(target.id);
     if (!own?.count) return;
-    const roleTotal = totalsByRole.get(target.role) || { count: 0n, sum: 0n };
-    const priorCount = roleTotal.count - own.count;
-    const priorSum = roleTotal.sum - own.sum;
     const summary = {
       review_count: Number(own.count),
-      raw_average: formatRatio(own.sum, own.count),
-      bayesian_rating: null,
-      rating_status: priorCount < BigInt(BAYESIAN_WEIGHT) ? 'INSUFFICIENT_PRIOR_SAMPLE' : 'AVAILABLE',
+      average_rating: formatRatio(own.sum, own.count),
       distribution: distributionByUser.get(target.id) || emptySummary().distribution
     };
-    if (summary.rating_status === 'AVAILABLE') {
-      const m = BigInt(BAYESIAN_WEIGHT);
-      summary.bayesian_rating = formatRatio(
-        own.sum * priorCount + m * priorSum,
-        priorCount * (own.count + m)
-      );
-    }
     result.set(target.id, summary);
   });
   return result;
@@ -98,4 +77,4 @@ const getRatingSummary = async (userId, knownRole = null) => {
   return summaries.get(userId) || emptySummary();
 };
 
-export { BAYESIAN_WEIGHT, canonicalReviewWhere, emptySummary, getRatingSummaries, getRatingSummary };
+export { canonicalReviewWhere, emptySummary, getRatingSummaries, getRatingSummary };

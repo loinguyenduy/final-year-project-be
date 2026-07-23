@@ -105,7 +105,7 @@ const getPartnerMetrics = async (userId, role, options = {}) => {
         : null;
 
     return {
-        rating: ratingSummary.bayesian_rating,
+        rating: ratingSummary.average_rating,
         review_count: ratingSummary.review_count,
         rating_summary: ratingSummary,
         completion_rate: completionRate

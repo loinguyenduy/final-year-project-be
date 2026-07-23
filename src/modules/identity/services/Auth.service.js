@@ -83,7 +83,6 @@ const handleRegisterUser = async (rawUserData) => {
         await HandymanProfile.create({
             user_id: newUser.id, 
             kyc_status: 'UNVERIFIED',
-            bayesian_score: 5.00,
             total_jobs_completed: 0,
             security_bond_status: 'UNPAID'
         }, { transaction: trans });

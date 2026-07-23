@@ -50,7 +50,7 @@ const getKycScore = ({ kycStatus, handymanLevel }) => {
 const calculateMatchScore = ({
     proposedPrice,
     lowestPrice,
-    bayesianScore,
+    averageRating,
     completedSameServiceJobs,
     totalJobsCompleted,
     kycStatus,
@@ -63,7 +63,7 @@ const calculateMatchScore = ({
 }) => {
     const price = Number(proposedPrice);
     const minPrice = Number(lowestPrice);
-    const score = Number(bayesianScore || 0);
+    const score = Number(averageRating || 0);
     const sameServiceJobs = Number(completedSameServiceJobs || 0);
     const totalJobs = Number(totalJobsCompleted || 0);
     const duration = Number(estimatedDurationHours);
@@ -112,13 +112,11 @@ const mapBidForMatchResponse = async (bid, benchmarks) => {
     const profile = handyman.Handyman_Profile || {};
     const completedSameServiceJobs = benchmarks.completedJobs.get(plainBid.handyman_id) || 0;
     const ratingSummary = benchmarks.ratings.get(plainBid.handyman_id);
-    const rankingRating = ratingSummary?.rating_status === 'AVAILABLE'
-        ? ratingSummary.bayesian_rating
-        : null;
+    const rankingRating = ratingSummary?.average_rating || null;
     const score = calculateMatchScore({
         proposedPrice: plainBid.proposed_price,
         lowestPrice: benchmarks.lowestPrice,
-        bayesianScore: rankingRating,
+        averageRating: rankingRating,
         completedSameServiceJobs,
         totalJobsCompleted: profile.total_jobs_completed,
         kycStatus: handyman.kyc_status,

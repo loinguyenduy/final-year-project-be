@@ -5,7 +5,7 @@
 1. Password: additive hashed action tokens, fragment-to-memory transport, POST-only validate/complete, LOCAL ownership and complete session invalidation.
 2. Read models: bounded role Overview and normalized compatible `/identity/profile`.
 3. My Jobs: server-side views/status/sort/page plus canonical needs-action and Review state.
-4. Reviews: additive cycle/role metadata, shared canonical scope, transactional mutual eligibility/concurrency and Bayesian aggregation.
+4. Reviews: additive cycle/role metadata, shared canonical scope, transactional mutual eligibility/concurrency and canonical rating aggregation.
 5. Frontend: password/security pages, real dashboards, CLOSED-Job Review panel and public profile/Review list.
 6. Delivery: guarded read-only rollout script, manual matrix, context update and honest verification results.
 
@@ -23,9 +23,9 @@ Flat auth identity fields remain. Whitelisted groups are profile, saved addresse
 
 Canonical means: all party/Job IDs; integer cycle at least one; opposing participant roles; integer rating 1–5; reviewer differs from reviewee. `Rating.service` owns the shared condition for Profile, Overview, Bid/selection, participant Job and Admin consumers. Reviewer active state is deliberately not a predicate. Legacy rows are retained untouched and excluded safely.
 
-## Bayesian
+## Canonical rating (stabilized)
 
-The design formula is `B=(vR+mC)/(v+m)`, default `m=5` with positive-integer ENV override. The role prior excludes all Reviews of the target. No target Reviews returns `NO_REVIEWS`; independent prior below five returns raw statistics but null Bayesian with `INSUFFICIENT_PRIOR_SAMPLE`; five or more returns `AVAILABLE`. BigInt ratio formatting yields decimal strings.
+The later participant stabilization task supersedes the original Bayesian presentation. `Rating.service` now returns arithmetic canonical Review data only: `review_count`, nullable decimal-string `average_rating`, and the 1–5 `distribution`. The legacy `HandymanProfile.bayesian_score` column remains untouched for schema compatibility and is not read by rating consumers.
 
 ## APIs, limits and realtime
 
@@ -45,7 +45,7 @@ Root modified: `PROJECT_CONTEXT_AND_GUIDELINES.md`.
 
 ## Rollout and limitations
 
-Use one-instance `DB_SYNC_ALTER`; do not backfill/delete legacy Reviews. SMTP and authenticated visual flows require prepared external state and are not claimed without execution. Bayesian is intentionally unavailable before five independent prior Reviews. Review edit/delete/moderation, polling, new cache/Socket systems and lifecycle/financial mutations remain out of scope.
+Use one-instance `DB_SYNC_ALTER`; do not backfill/delete legacy Reviews. SMTP and authenticated visual flows require prepared external state and are not claimed without execution. Review edit/delete/moderation, polling, new cache/Socket systems and lifecycle/financial mutations remain out of scope.
 
 ## Verification results (2026-07-23)
 

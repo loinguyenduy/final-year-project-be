@@ -65,7 +65,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                         include: [
                             {
                                 model: HandymanProfile,
-                                attributes: ['bayesian_score', 'total_jobs_completed', 'handyman_level'],
+                                attributes: ['total_jobs_completed', 'handyman_level'],
                                 required: false
                             }
                         ]

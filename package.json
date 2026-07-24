@@ -13,6 +13,8 @@
     "admin:phase3:test:manual": "node scripts/admin/manualAdminUsersWalletsServicesTest.js",
     "admin:phase4:test:manual": "node scripts/admin/manualAdminDashboardAuditTest.js",
     "participant:phase5:test:manual": "node scripts/participant/manualParticipantExperienceReviewsTest.js",
+    "ai:gemini:smoke": "node scripts/ai/geminiSmoke.js",
+    "ai:assistant:test:manual": "node scripts/ai/manualAiJobAssistantTest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -20,6 +22,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google/genai": "2.13.0",
     "@payos/node": "^2.0.5",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",

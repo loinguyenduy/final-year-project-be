@@ -13,6 +13,11 @@ import { calculateDistanceKm } from '../utils/location.util.js';
 import JobCancellation from '../models/JobCancellation.model.js';
 import { buildCancellationDto } from '../utils/cancellationPolicy.util.js';
 import { getRatingSummary } from '../../dispute/services/Rating.service.js';
+import JobAiPriceSuggestion from '../../ai/models/JobAiPriceSuggestion.model.js';
+import {
+    SAFE_GUIDANCE_ATTRIBUTES,
+    buildSafeAiPriceGuidance
+} from '../../ai/services/AiJobIntegration.service.js';
 
 const getServicesCategoryService = async () => {
     try {
@@ -128,6 +133,12 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                         }
                     ]
                 },
+                {
+                    model: JobAiPriceSuggestion,
+                    as: 'AiPriceSuggestion',
+                    attributes: SAFE_GUIDANCE_ATTRIBUTES,
+                    required: false
+                },
                 bidInclude
             ],
             order: [
@@ -162,6 +173,13 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
         ) {
             return { EM: "You do not have permission to view this job.", EC: 403, DT: "" };
         }
+
+        const safeAiGuidance = isOpenForBidding
+            && ['CUSTOMER', 'HANDYMAN'].includes(requestingUser?.role)
+            ? buildSafeAiPriceGuidance(responseData.AiPriceSuggestion)
+            : null;
+        delete responseData.AiPriceSuggestion;
+        if (safeAiGuidance) responseData.ai_price_guidance = safeAiGuidance;
 
         responseData.allowed_actions = isOwnerCustomer
             ? responseData.current_status === 'POSTED'

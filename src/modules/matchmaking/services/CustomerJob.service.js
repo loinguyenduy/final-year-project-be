@@ -22,6 +22,11 @@ import {
 import { Op } from 'sequelize';
 import { getReviewStateMap } from '../../dispute/services/Review.service.js';
 import { actionForStatus, ACTIVE_STATUSES } from '../../identity/services/ParticipantRead.service.js';
+import AiError from '../../ai/utils/AiError.js';
+import {
+    createJobAiSnapshot,
+    lockApplicableAiSession
+} from '../../ai/services/AiJobIntegration.service.js';
 
 const EARLY_CANCELLATION_REASONS = Object.freeze([
     'NO_LONGER_NEEDED',
@@ -99,7 +104,8 @@ const createJobService = async (userId, jobData) => {
         service_id, issue_description, scheduled_at, images,
         address_option, province_code, ward_code, detail_address, 
         gps_lat, gps_long, location_source, location_confirmed,
-        estimated_budget_min, estimated_budget_max
+        estimated_budget_min, estimated_budget_max,
+        ai_assistant_session_id
     } = jobData;
 
     let trans;
@@ -199,6 +205,15 @@ const createJobService = async (userId, jobData) => {
 
         trans = await db.transaction();
 
+        const aiSession = ai_assistant_session_id
+            ? await lockApplicableAiSession({
+                sessionId: ai_assistant_session_id,
+                customerId: userId,
+                serviceId: service_id,
+                transaction: trans
+            })
+            : null;
+
         const newJob = await Job.create({
             customer_id: userId,
             service_id,
@@ -254,6 +269,14 @@ const createJobService = async (userId, jobData) => {
             trigger_gps_long: final_gps_long
         }, { transaction: trans });
 
+        if (aiSession) {
+            await createJobAiSnapshot({
+                session: aiSession,
+                job: newJob,
+                transaction: trans
+            });
+        }
+
         await trans.commit();
         const responseJob = newJob.toJSON();
         responseJob.profile_coordinates_updated = profileCoordinatesUpdated;
@@ -265,6 +288,14 @@ const createJobService = async (userId, jobData) => {
 
     } catch (error) {
         if (trans && !trans.finished) await trans.rollback();
+        if (error instanceof AiError) {
+            return {
+                EM: error.message,
+                EC: error.httpStatus,
+                code: error.code,
+                DT: error.details
+            };
+        }
         console.log(">>> Error in createJobService: ", error);
         return { 
           EM: "Internal server error while posting job.", 

@@ -11,6 +11,11 @@ import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import { calculateDistanceKm } from '../utils/location.util.js';
 import { getRatingSummaries } from '../../dispute/services/Rating.service.js';
+import JobAiPriceSuggestion from '../../ai/models/JobAiPriceSuggestion.model.js';
+import {
+    SAFE_GUIDANCE_ATTRIBUTES,
+    buildSafeAiPriceGuidance
+} from '../../ai/services/AiJobIntegration.service.js';
 
 // Work time check in Vietnam timezone (UTC+7)
 // Returns true if the job's scheduled time falls in any of the handyman's preferred slots.
@@ -125,6 +130,12 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                     model: Ward,
                     attributes: ['ward_code', 'name'],
                     required: false
+                },
+                {
+                    model: JobAiPriceSuggestion,
+                    as: 'AiPriceSuggestion',
+                    attributes: SAFE_GUIDANCE_ATTRIBUTES,
+                    required: false
                 }
             ],
             order: [['createdAt', 'DESC']]
@@ -136,6 +147,9 @@ const getAvailableJobsForHandymanService = async (handymanId, {
         const processed = jobs
             .map(job => {
                 const data = job.toJSON();
+                const safeAiGuidance = buildSafeAiPriceGuidance(data.AiPriceSuggestion);
+                delete data.AiPriceSuggestion;
+                if (safeAiGuidance) data.ai_price_guidance = safeAiGuidance;
 
                 // Distance
                 if (current_lat != null && current_long != null && data.gps_lat != null && data.gps_long != null) {

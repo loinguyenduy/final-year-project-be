@@ -41,9 +41,33 @@ const passwordActionRateLimiter = createLimiter({
   maxRequests: positiveInteger(process.env.PASSWORD_ACTION_RATE_LIMIT_MAX_REQUESTS, 5)
 });
 
+const aiWindowMs = positiveInteger(process.env.AI_RATE_LIMIT_WINDOW_MS, 900000);
+const aiMaxRequests = positiveInteger(process.env.AI_RATE_LIMIT_MAX, 20);
+
+const aiLimiterOptions = {
+  windowMs: aiWindowMs,
+  limit: aiMaxRequests,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({
+    EM: 'Too many AI assistant requests. Please try again later.',
+    EC: 429,
+    code: 'RATE_LIMITED',
+    DT: ''
+  })
+};
+
+const aiIpRateLimiter = rateLimit(aiLimiterOptions);
+const aiCustomerRateLimiter = rateLimit({
+  ...aiLimiterOptions,
+  keyGenerator: (req) => String(req.user?.id || 'unauthenticated')
+});
+
 export {
   adminLoginRateLimiter,
   adminMutationRateLimiter,
+  aiCustomerRateLimiter,
+  aiIpRateLimiter,
   passwordActionRateLimiter,
   participantLoginRateLimiter
 };

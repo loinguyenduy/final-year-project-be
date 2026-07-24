@@ -7,6 +7,7 @@ import adminRoutes from '../../modules/admin/routes/Admin.routes.js';
 import profileRoutes from '../../modules/identity/routes/Profile.routes.js';
 import matchmakingRoutes from '../../modules/matchmaking/routes/matchmaking.routes.js';
 import chatRoutes from '../../modules/chat/routes/chat.routes.js';
+import aiRoutes from '../../modules/ai/routes/ai.routes.js';
 
 const router = express.Router();
 
@@ -31,5 +32,8 @@ router.use('/matchmaking', matchmakingRoutes);
 
 // Chat routes
 router.use('/chat', chatRoutes);
+
+// Optional AI job diagnosis and historical price guidance
+router.use('/ai/job-assistant', aiRoutes);
 
 export default router;

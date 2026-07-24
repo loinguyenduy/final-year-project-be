@@ -9,6 +9,9 @@ import VerificationToken from '../../modules/identity/models/VerificationToken.m
 import RefreshToken from '../../modules/identity/models/RefreshToken.model.js';
 import PasswordActionToken from '../../modules/identity/models/PasswordActionToken.model.js';
 import AdminAuditLog from '../../modules/admin/models/AdminAuditLog.model.js';
+import AiAssistantSession from '../../modules/ai/models/AiAssistantSession.model.js';
+import AiAssistantMessage from '../../modules/ai/models/AiAssistantMessage.model.js';
+import JobAiPriceSuggestion from '../../modules/ai/models/JobAiPriceSuggestion.model.js';
 
 import Province from '../../modules/matchmaking/models/Province.model.js';
 import Ward from '../../modules/matchmaking/models/Ward.model.js';
@@ -59,6 +62,28 @@ RefreshToken.belongsTo(User, { foreignKey: 'user_id' });
 
 User.hasMany(PasswordActionToken, { foreignKey: 'user_id' });
 PasswordActionToken.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(AiAssistantSession, {
+    as: 'AiAssistantSessions',
+    foreignKey: 'customer_id',
+    onDelete: 'RESTRICT'
+});
+AiAssistantSession.belongsTo(User, {
+    as: 'Customer',
+    foreignKey: 'customer_id',
+    onDelete: 'RESTRICT'
+});
+
+AiAssistantSession.hasMany(AiAssistantMessage, {
+    as: 'Messages',
+    foreignKey: 'session_id',
+    onDelete: 'CASCADE'
+});
+AiAssistantMessage.belongsTo(AiAssistantSession, {
+    as: 'Session',
+    foreignKey: 'session_id',
+    onDelete: 'CASCADE'
+});
 
 User.hasMany(AdminAuditLog, {
     as: 'AdminAuditLogs',
@@ -120,6 +145,61 @@ Bid.belongsTo(Job, { foreignKey: 'job_id' });
 
 Bid.hasOne(Job, { as: 'SelectedForJob', foreignKey: 'selected_bid_id' });
 Job.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
+
+Service.hasMany(AiAssistantSession, {
+    as: 'AiAssistantSessions',
+    foreignKey: 'detected_service_id',
+    onDelete: 'RESTRICT'
+});
+AiAssistantSession.belongsTo(Service, {
+    as: 'DetectedService',
+    foreignKey: 'detected_service_id',
+    onDelete: 'RESTRICT'
+});
+
+Job.hasOne(AiAssistantSession, {
+    as: 'AppliedAiAssistantSession',
+    foreignKey: 'applied_job_id',
+    onDelete: 'RESTRICT'
+});
+AiAssistantSession.belongsTo(Job, {
+    as: 'AppliedJob',
+    foreignKey: 'applied_job_id',
+    onDelete: 'RESTRICT'
+});
+
+Job.hasOne(JobAiPriceSuggestion, {
+    as: 'AiPriceSuggestion',
+    foreignKey: 'job_id',
+    onDelete: 'RESTRICT'
+});
+JobAiPriceSuggestion.belongsTo(Job, {
+    as: 'Job',
+    foreignKey: 'job_id',
+    onDelete: 'RESTRICT'
+});
+
+AiAssistantSession.hasOne(JobAiPriceSuggestion, {
+    as: 'PriceSuggestionSnapshot',
+    foreignKey: 'assistant_session_id',
+    onDelete: 'RESTRICT'
+});
+JobAiPriceSuggestion.belongsTo(AiAssistantSession, {
+    as: 'AssistantSession',
+    foreignKey: 'assistant_session_id',
+    onDelete: 'RESTRICT'
+});
+
+Service.hasMany(JobAiPriceSuggestion, {
+    as: 'AiPriceSuggestions',
+    foreignKey: 'service_id',
+    onDelete: 'RESTRICT'
+});
+JobAiPriceSuggestion.belongsTo(Service, {
+    as: 'Service',
+    foreignKey: 'service_id',
+    onDelete: 'RESTRICT'
+});
 
 User.hasMany(Bid, { foreignKey: 'handyman_id' });
 Bid.belongsTo(User, { foreignKey: 'handyman_id' });
@@ -956,6 +1036,79 @@ const verifyParticipantExperienceSchema = async () => {
     console.log('Participant Experience schema verified successfully.', reviewCounts[0]);
 };
 
+const verifyAiJobAssistantSchema = async () => {
+    const requiredColumns = [
+        'AI_Assistant_Sessions.customer_id',
+        'AI_Assistant_Sessions.status',
+        'AI_Assistant_Sessions.stage',
+        'AI_Assistant_Sessions.revision',
+        'AI_Assistant_Sessions.expires_at',
+        'AI_Assistant_Sessions.applied_job_id',
+        'AI_Assistant_Messages.session_id',
+        'AI_Assistant_Messages.sequence',
+        'AI_Assistant_Messages.client_message_id',
+        'Job_AI_Price_Suggestions.job_id',
+        'Job_AI_Price_Suggestions.assistant_session_id',
+        'Job_AI_Price_Suggestions.confidence'
+    ];
+    const [columns] = await db.query(`
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name IN (
+            'AI_Assistant_Sessions',
+            'AI_Assistant_Messages',
+            'Job_AI_Price_Suggestions'
+          )
+    `);
+    const foundColumns = new Set(
+        columns.map((entry) => `${entry.table_name}.${entry.column_name}`)
+    );
+    const missingColumns = requiredColumns.filter((entry) => !foundColumns.has(entry));
+    if (missingColumns.length > 0) {
+        throw new Error(
+            `Required AI Job Assistant columns are missing: ${missingColumns.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+
+    const requiredIndexes = [
+        'ai_assistant_sessions_customer_status_updated',
+        'ai_assistant_sessions_expiry',
+        'ai_assistant_sessions_applied_job_unique',
+        'ai_assistant_messages_session_sequence_unique',
+        'ai_assistant_messages_session_client_unique',
+        'job_ai_price_suggestions_job_unique',
+        'job_ai_price_suggestions_session_unique'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const byName = new Map(indexes.map((entry) => [entry.indexname, entry.indexdef]));
+    const missingIndexes = requiredIndexes.filter((name) => !byName.has(name));
+    if (missingIndexes.length > 0) {
+        throw new Error(
+            `Required AI Job Assistant indexes are missing: ${missingIndexes.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    [
+        'ai_assistant_sessions_applied_job_unique',
+        'ai_assistant_messages_session_sequence_unique',
+        'ai_assistant_messages_session_client_unique',
+        'job_ai_price_suggestions_job_unique',
+        'job_ai_price_suggestions_session_unique'
+    ].forEach((name) => {
+        if (!String(byName.get(name)).includes('UNIQUE')) {
+            throw new Error(`Required AI Job Assistant index ${name} must be unique.`);
+        }
+    });
+    console.log('AI Job Assistant schema verified successfully.');
+};
+
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
 Review.belongsTo(User, { as: 'Reviewer', foreignKey: 'reviewer_id' });
 
@@ -990,6 +1143,7 @@ const initDatabase = async () => {
         await verifyAdminJobIndexes();
         await verifyAdminManagementSchema();
         await verifyParticipantExperienceSchema();
+        await verifyAiJobAssistantSchema();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

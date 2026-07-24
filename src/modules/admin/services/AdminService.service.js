@@ -105,14 +105,26 @@ const getAdminService = async (serviceId) => {
 };
 
 const ensureUniqueService = async ({ serviceCode, name, excludeId = null, transaction }) => {
-  const conditions = [];
-  if (serviceCode) conditions.push({ service_code: serviceCode });
-  if (name) conditions.push(sqlWhere(fn('LOWER', col('name')), name.toLocaleLowerCase('en-US')));
-  const where = { [Op.or]: conditions };
-  if (excludeId) where.id = { [Op.ne]: excludeId };
-  const duplicate = await Service.findOne({ where, transaction });
-  if (duplicate?.service_code === serviceCode) throw new AdminManagementError('service_code already exists.', 409, 'SERVICE_CODE_ALREADY_EXISTS');
-  if (duplicate) throw new AdminManagementError('Service name already exists.', 409, 'SERVICE_NAME_ALREADY_EXISTS');
+  const exclusion = excludeId ? { id: { [Op.ne]: excludeId } } : {};
+  if (serviceCode) {
+    const duplicateCode = await Service.findOne({
+      where: { service_code: serviceCode, ...exclusion },
+      attributes: ['id'],
+      transaction
+    });
+    if (duplicateCode) throw new AdminManagementError('service_code already exists.', 409, 'SERVICE_CODE_ALREADY_EXISTS');
+  }
+  if (name) {
+    const duplicateName = await Service.findOne({
+      where: {
+        ...exclusion,
+        [Op.and]: [sqlWhere(fn('LOWER', col('name')), name.toLocaleLowerCase('en-US'))]
+      },
+      attributes: ['id'],
+      transaction
+    });
+    if (duplicateName) throw new AdminManagementError('Service name already exists.', 409, 'SERVICE_NAME_ALREADY_EXISTS');
+  }
 };
 
 const auditMeta = (requestMeta) => ({
@@ -156,7 +168,9 @@ const updateAdminService = async ({ serviceId, payload = {}, admin, requestMeta 
     await ensureUniqueService({ name, excludeId: service.id, transaction });
     const before = { service_code: service.service_code, service_name: service.name, is_active: service.is_active, icon_configured: Boolean(service.icon_url) };
     if (service.name === name && service.icon_url === iconUrl) throw new AdminManagementError('Service already has the requested values.', 409, 'SERVICE_UPDATE_ALREADY_APPLIED');
-    await service.update({ name, icon_url: iconUrl }, { transaction });
+    service.name = name;
+    service.icon_url = iconUrl;
+    await service.save({ transaction, fields: ['name', 'icon_url'] });
     await createAdminAuditLog({
       adminId: admin.id, action: ADMIN_AUDIT_ACTIONS.SERVICE_UPDATED, targetType: ADMIN_AUDIT_TARGETS.SERVICE, targetId: service.id,
       beforeState: before, afterState: { service_code: service.service_code, service_name: service.name, is_active: service.is_active, icon_configured: Boolean(service.icon_url) },

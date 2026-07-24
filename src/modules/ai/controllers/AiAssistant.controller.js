@@ -6,6 +6,7 @@ import {
   sendSessionMessage
 } from '../services/AiSession.service.js';
 import { decideSessionPrice } from '../services/AiPriceDecision.service.js';
+import { decideSessionDiagnosis } from '../services/AiDiagnosisDecision.service.js';
 import { normalizeUuid } from '../validators/aiRequest.validator.js';
 
 const respondError = (res, error, correlationId) => {
@@ -104,6 +105,24 @@ const handlePriceDecision = async (req, res) => {
   }
 };
 
+const handleDiagnosisDecision = async (req, res) => {
+  try {
+    const result = await decideSessionDiagnosis({
+      customerId: req.user.id,
+      sessionId: normalizeUuid(req.params.sessionId, 'sessionId'),
+      body: req.body || {}
+    });
+    return res.status(200).json({
+      EM: 'AI diagnosis decision saved successfully.',
+      EC: 0,
+      code: 'AI_DIAGNOSIS_DECISION_SAVED',
+      DT: result.data
+    });
+  } catch (error) {
+    return respondError(res, error, req.correlationId);
+  }
+};
+
 const handleAbandonSession = async (req, res) => {
   try {
     const result = await abandonSession({
@@ -125,6 +144,7 @@ const handleAbandonSession = async (req, res) => {
 export {
   handleAbandonSession,
   handleCreateSession,
+  handleDiagnosisDecision,
   handleGetSession,
   handlePriceDecision,
   handleSendMessage

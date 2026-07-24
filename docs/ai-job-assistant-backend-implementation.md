@@ -4,8 +4,10 @@
 
 The backend adds an optional Customer AI assistant that resolves an active
 Service, prepares a safe Job form draft, and calculates historical price
-guidance from real selected/won Bids. Gemini never queries the database,
-calculates money, or creates a Job.
+guidance from real selected/won Bids. The conversation locks one canonical
+language and requires explicit Customer diagnosis confirmation before the
+historical estimator runs. Gemini never queries the database, calculates
+money, or creates a Job.
 
 Manual `POST /api/v1/matchmaking/jobs` requests without
 `ai_assistant_session_id` do not query AI tables and retain their existing
@@ -15,12 +17,12 @@ behavior.
 
 | Gate | Implementation | Verification |
 |---|---|---|
-| 1 | `@google/genai@2.13.0`, config, provider, structured output, smoke | Syntax passed. Current environment has an API key but no model; smoke returned `AI_PROVIDER_NOT_CONFIGURED` without exposing the key. |
-| 2 | Session/message schema, Customer-only API, ownership, expiry, revision and failed-row retry | Syntax, route import and association smoke passed. Database rollout was not run because it requires a backup and explicit one-instance alter procedure. |
+| 1 | `@google/genai@2.13.0`, config, provider, structured output and language-constrained prompt | Provider smoke passed with the configured model; key, prompt and raw response were not printed. |
+| 2 | Session/message schema, Customer-only API, ownership, expiry, revision, language lock and failed-row retry | Syntax, route import, live VI/EN session and explicit language-switch smoke passed. No schema change was required. |
 | 3 | Canonical CLOSED Job query, text-only similarity and BigInt estimator | Pure similarity/estimator checks passed. |
-| 4 | Accept, recalculate, own budget, continue-without-estimate and form draft | Static/import checks passed; live provider flow requires `GEMINI_MODEL`. |
-| 5 | Atomic Job snapshot/session apply and safe Job DTO projection | Static/import/association checks passed; live DB integration remains a rollout/manual test. |
-| 6 | Smoke/manual scripts, environment example and documentation | See command results below. |
+| 4 | Diagnosis review/correction/confirmation, then four price decisions and form draft | Live API proved no estimate before confirmation and estimate presentation only after confirmation. |
+| 5 | Atomic Job snapshot/session apply and safe Job DTO projection | Existing integration was left unchanged. |
+| 6 | Smoke/manual scripts, frontend lint/build and documentation | Passed except visual breakpoint inspection, which remains manual. |
 
 ## Public API
 
@@ -29,6 +31,7 @@ Prefix: `/api/v1/ai/job-assistant`
 - `POST /sessions`
 - `GET /sessions/:sessionId`
 - `POST /sessions/:sessionId/messages`
+- `POST /sessions/:sessionId/diagnosis-decision`
 - `POST /sessions/:sessionId/price-decision`
 - `POST /sessions/:sessionId/abandon`
 
@@ -67,6 +70,13 @@ Operational artifacts:
 - This implementation document and the manual test guide.
 - Workspace `PROJECT_CONTEXT_AND_GUIDELINES.md`.
 
+Language/confirmation additions:
+
+- `src/modules/ai/utils/conversationLanguage.util.js`
+- `src/modules/ai/services/AiDiagnosisDecision.service.js`
+- updates to AI constants, provider, validator, session service, controller,
+  routes and smoke/manual scripts.
+
 ## Environment
 
 ```text
@@ -79,7 +89,7 @@ AI_SESSION_TTL_MINUTES=1440
 AI_MAX_ACTIVE_SESSIONS_PER_CUSTOMER=3
 AI_RATE_LIMIT_WINDOW_MS=900000
 AI_RATE_LIMIT_MAX=20
-AI_PROMPT_VERSION=job-diagnosis-v1
+AI_PROMPT_VERSION=job-diagnosis-language-confirmation-v2
 AI_ESTIMATOR_VERSION=historical-bid-v1
 AI_MIN_PRICE_SAMPLES=3
 AI_MAX_HISTORICAL_CANDIDATES=100
@@ -95,6 +105,13 @@ before the first request to obtain exact replay semantics.
 - SDK and model calls exist only in `Gemini.provider.js`.
 - The current Customer message appears once in one ordered conversation array.
 - Prior context contains only completed turns; failed/stale messages are excluded.
+- `conversation_language` is resolved deterministically from the first
+  meaningful message and stored in the existing `structured_state` JSONB.
+- Once VI/EN is selected, mixed-language follow-ups do not change it. Only an
+  explicit request to use English or Vietnamese can switch it.
+- The prompt and backend validator reject false marketplace promises, certain
+  diagnoses, and claims that a technician has already been or will
+  automatically be assigned.
 - Structured output uses a small JSON Schema subset and is independently
   rebuilt by a strict backend whitelist.
 - Gemini output cannot contain price, database IDs, address, GPS, identity,
@@ -110,12 +127,30 @@ State flow:
 ```text
 ACTIVE/COLLECTING_PROBLEM
   -> ACTIVE/CLARIFYING
-  -> ESTIMATE_PRESENTED
+  -> READY_FOR_ESTIMATE (database compatibility state)
+  -> REVIEW_DIAGNOSIS (public DTO while confirmation=PENDING)
+  -> ESTIMATE_PRESENTED (only after CONFIRM_DIAGNOSIS)
   -> DRAFT_READY
   -> APPLIED_TO_JOB
 ```
 
 Terminal alternatives are `ABANDONED` and `EXPIRED`.
+
+`REVIEW_DIAGNOSIS` is a public DTO stage, not a new PostgreSQL enum value. The
+row remains in the existing `READY_FOR_ESTIMATE` state and stores
+`diagnosis_confirmation=PENDING` in JSONB.
+
+Diagnosis actions:
+
+- `CONFIRM_DIAGNOSIS` revalidates the locked session, runs the unchanged
+  historical estimator, re-locks/revalidates the revision, stores the estimate
+  and marks the diagnosis `CONFIRMED`.
+- `CORRECT_DIAGNOSIS` clears stale estimate/budget, marks the diagnosis
+  `CORRECTING`, appends a localized prompt and re-enables normal messages.
+- Sending a normal message while review is pending is also treated as a
+  correction, so the composer remains usable.
+- The estimator is not invoked while confirmation is `PENDING` or
+  `CORRECTING`.
 
 Customer messages are reserved in a short transaction, Gemini is called
 without a database lock, and the result commits only when the reserved revision
@@ -226,13 +261,19 @@ No seed or historical backfill is used.
 - Pure similarity/estimator smoke: passed.
 - Read-only historical SQL smoke: passed against active Service `ELECTRICAL`;
   one canonical candidate was returned and no data was mutated.
-- Gemini smoke: missing-config path passed with `AI_PROVIDER_NOT_CONFIGURED`;
-  real provider call not run because `GEMINI_MODEL` is absent.
-- Read-only schema inspection found none of the three new tables. Schema rollout
-  was deliberately not applied because it requires a backup and explicit
-  one-instance `DB_SYNC_ALTER=true` operation.
-- Live session/Create Job API tests: not run because the additive schema has not
-  been rolled out and no guarded Customer token was supplied.
+- Gemini smoke: passed with configured `gemini-3.5-flash-lite`, returning
+  structured `NEED_MORE_INFO`.
+- Deterministic language/safety smoke: VI/EN detection, locked-language mixed
+  follow-up, explicit switch, forbidden-claim rejection and safe uncertain
+  wording all passed.
+- Live API smoke: `REVIEW_DIAGNOSIS` contained no estimate; explicit
+  `CONFIRM_DIAGNOSIS` produced `ESTIMATE_PRESENTED` using
+  `HISTORICAL_SELECTED_BIDS`. Correction restored message input and an explicit
+  VI-to-EN switch persisted. Test sessions were abandoned afterward.
+- Normal startup verified the existing AI tables/indexes with
+  `DB_SYNC_ALTER=false`.
+- Frontend lint and production build passed; the existing Vite large-chunk
+  warning remains unrelated.
 
 ## Known limitations
 
@@ -244,3 +285,7 @@ No seed or historical backfill is used.
   stable client UUID exactly idempotent.
 - Rate-limit counters use the existing per-instance in-memory store.
 - Small datasets legitimately return `LOW` or `INSUFFICIENT_DATA`.
+- Ambiguous first messages default to Vietnamese until an explicit language
+  request.
+- Diagnosis confirmation is stored and enforced at application-service level
+  in JSONB; it is not a database enum constraint.

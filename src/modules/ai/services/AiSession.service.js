@@ -18,7 +18,7 @@ import {
   normalizeExpectedRevision
 } from '../validators/aiRequest.validator.js';
 import { analyzeConversation } from '../providers/Gemini.provider.js';
-import { estimateHistoricalPrice } from './HistoricalPrice.service.js';
+import { resolveConversationLanguage } from '../utils/conversationLanguage.util.js';
 
 const providerStatus = (message) => message?.provider_metadata?.status || null;
 const isExpired = (session) => new Date(session.expires_at).getTime() <= Date.now();
@@ -59,9 +59,56 @@ const safeSelectedBudget = (selectedBudget) => {
   };
 };
 
+const canonicalDtoStage = (session) => (
+  session.structured_state?.diagnosis_confirmation === 'PENDING'
+    ? 'REVIEW_DIAGNOSIS'
+    : session.stage
+);
+
+const buildDiagnosisReview = (session, service) => {
+  const state = session.structured_state || {};
+  const confirmationStatus = state.diagnosis_confirmation
+    || (['ESTIMATE_PRESENTED', 'DRAFT_READY'].includes(session.status)
+      ? 'CONFIRMED'
+      : null);
+  if (!['PENDING', 'CONFIRMED'].includes(confirmationStatus)) return null;
+  const review = { confirmation_status: confirmationStatus };
+  if (service) {
+    review.service = {
+      id: service.id,
+      service_code: service.service_code,
+      name: service.name
+    };
+  }
+  if (state.device_or_work_area) review.device_or_work_area = state.device_or_work_area;
+  if (state.problem_summary) review.main_problem = state.problem_summary;
+  if (Array.isArray(state.symptoms) && state.symptoms.length > 0) {
+    review.symptoms = state.symptoms;
+  }
+  if (state.device_age_or_usage_duration) {
+    review.device_age_or_usage_duration = state.device_age_or_usage_duration;
+  }
+  if (state.severity && state.severity !== 'UNKNOWN') review.severity = state.severity;
+  if (state.urgency && state.urgency !== 'UNKNOWN') review.urgency = state.urgency;
+  if (state.issue_description) review.issue_description = state.issue_description;
+  return review;
+};
+
 const allowedActions = (session, config) => {
   if (AI_TERMINAL_SESSION_STATUSES.includes(session.status)) return [];
-  if (session.status === 'DRAFT_READY') return ['APPLY_TO_JOB', 'ABANDON_SESSION'];
+  if (session.status === 'DRAFT_READY') {
+    const actions = ['APPLY_TO_JOB', 'ABANDON_SESSION'];
+    if (session.turn_count < config.maxTurns) actions.splice(1, 0, 'CORRECT_DIAGNOSIS');
+    return actions;
+  }
+  if (session.structured_state?.diagnosis_confirmation === 'PENDING') {
+    const actions = ['CONFIRM_DIAGNOSIS', 'ABANDON_SESSION'];
+    if (session.turn_count < config.maxTurns) {
+      actions.unshift('SEND_MESSAGE');
+      actions.splice(2, 0, 'CORRECT_DIAGNOSIS');
+    }
+    return actions;
+  }
   if (session.status === 'ESTIMATE_PRESENTED') {
     const actions = [
       'USE_OWN_BUDGET',
@@ -73,6 +120,7 @@ const allowedActions = (session, config) => {
       && session.turn_count < config.maxTurns) {
       actions.push('RECALCULATE');
     }
+    if (session.turn_count < config.maxTurns) actions.push('CORRECT_DIAGNOSIS');
     return actions;
   }
   return session.turn_count < config.maxTurns
@@ -113,8 +161,9 @@ const getSessionDto = async (sessionOrId, customerId) => {
   return {
     session_id: session.id,
     status: session.status,
-    stage: session.stage,
+    stage: canonicalDtoStage(session),
     revision: Number(session.revision),
+    conversation_language: session.structured_state?.conversation_language || 'VI',
     service: service ? {
       id: service.id,
       service_code: service.service_code,
@@ -123,6 +172,7 @@ const getSessionDto = async (sessionOrId, customerId) => {
     } : null,
     problem_summary: session.problem_summary,
     structured_draft: session.structured_state || {},
+    diagnosis_review: buildDiagnosisReview(session, service),
     messages: messages.map((message) => ({
       message_id: message.id,
       client_message_id: message.sender === 'CUSTOMER'
@@ -220,7 +270,9 @@ const createSession = async ({ customerId, body = {}, correlationId }) => {
       customer_id: customerId,
       status: 'ACTIVE',
       stage: 'COLLECTING_PROBLEM',
-      structured_state: {},
+      structured_state: {
+        diagnosis_confirmation: 'COLLECTING'
+      },
       revision: 0,
       turn_count: 0,
       recalculation_count: 0,
@@ -267,6 +319,10 @@ const reserveCustomerMessage = async ({
     }, { transaction });
     return { expired: true };
   }
+  const conversationLanguage = resolveConversationLanguage(
+    session.structured_state?.conversation_language,
+    messageText
+  );
 
   const existing = await AiAssistantMessage.findOne({
     where: { session_id: session.id, client_message_id: clientMessageId },
@@ -314,7 +370,7 @@ const reserveCustomerMessage = async ({
     if (Number(session.recalculation_count) >= config.maxRecalculations) {
       return { maxRecalculations: true };
     }
-  } else if (session.status !== 'ACTIVE') {
+  } else if (!['ACTIVE', 'READY_FOR_ESTIMATE'].includes(session.status)) {
     return { invalidState: true };
   }
   if (Number(session.turn_count) >= config.maxTurns) return { maxTurns: true };
@@ -344,7 +400,21 @@ const reserveCustomerMessage = async ({
       kind: isRecalculation ? 'RECALCULATION' : 'MESSAGE'
     }
   }, { transaction });
+  const correctingDiagnosis = !isRecalculation
+    && session.structured_state?.diagnosis_confirmation === 'PENDING';
+  const nextStructuredState = {
+    ...(session.structured_state || {}),
+    conversation_language: conversationLanguage,
+    ...(correctingDiagnosis ? { diagnosis_confirmation: 'CORRECTING' } : {})
+  };
   await session.update({
+    ...(correctingDiagnosis ? {
+      status: 'ACTIVE',
+      stage: 'CLARIFYING',
+      latest_estimate: null,
+      selected_budget: null
+    } : {}),
+    structured_state: nextStructuredState,
     revision: Number(session.revision) + 1,
     turn_count: Number(session.turn_count) + 1,
     recalculation_count: isRecalculation
@@ -409,8 +479,20 @@ const getPriorCompletedMessages = async (sessionId, beforeSequence, limit) => {
     }));
 };
 
-const mergeStructuredState = (previous, analysis) => ({
+const mergeStructuredState = (previous, analysis, conversationLanguage) => ({
+  conversation_language: conversationLanguage,
+  diagnosis_confirmation: analysis.stage === 'READY_FOR_ESTIMATE'
+    ? 'PENDING'
+    : previous?.diagnosis_confirmation === 'CORRECTING'
+      ? 'CORRECTING'
+      : 'COLLECTING',
   service_code: analysis.service_code ?? previous?.service_code ?? null,
+  device_or_work_area: analysis.device_or_work_area
+    ?? previous?.device_or_work_area
+    ?? null,
+  device_age_or_usage_duration: analysis.device_age_or_usage_duration
+    ?? previous?.device_age_or_usage_duration
+    ?? null,
   issue_description: analysis.form_patch.issue_description
     ?? previous?.issue_description
     ?? null,
@@ -433,8 +515,8 @@ const commitProviderResponse = async ({
   analysis,
   providerMetadata,
   resolvedService,
-  estimate,
-  isRecalculation
+  isRecalculation,
+  conversationLanguage
 }) => db.transaction(async (transaction) => {
   const session = await AiAssistantSession.findOne({
     where: { id: sessionId, customer_id: customerId },
@@ -480,16 +562,25 @@ const commitProviderResponse = async ({
       transaction
     });
   }
-  const structuredState = mergeStructuredState(session.structured_state || {}, analysis);
+  const previousStructuredState = isRecalculation
+    ? {
+      ...(session.structured_state || {}),
+      diagnosis_confirmation: 'CORRECTING'
+    }
+    : (session.structured_state || {});
+  const structuredState = mergeStructuredState(
+    previousStructuredState,
+    analysis,
+    conversationLanguage
+  );
   const ready = analysis.stage === 'READY_FOR_ESTIMATE'
     && canonicalService
     && String(structuredState.problem_summary || '').length >= 10
     && String(structuredState.issue_description || '').length >= 10
     && structuredState.missing_information.length === 0;
-  const finalEstimate = ready ? estimate : null;
-  const nextStatus = ready ? 'ESTIMATE_PRESENTED' : 'ACTIVE';
+  const nextStatus = ready ? 'READY_FOR_ESTIMATE' : 'ACTIVE';
   const nextStage = ready
-    ? 'ESTIMATE_PRESENTED'
+    ? 'READY_FOR_ESTIMATE'
     : analysis.stage === 'NEED_MORE_INFO'
       ? 'CLARIFYING'
       : 'COLLECTING_PROBLEM';
@@ -518,8 +609,8 @@ const commitProviderResponse = async ({
     detected_service_id: canonicalService?.id || null,
     problem_summary: structuredState.problem_summary,
     structured_state: structuredState,
-    latest_estimate: finalEstimate,
-    selected_budget: isRecalculation ? null : session.selected_budget,
+    latest_estimate: (ready || isRecalculation) ? null : session.latest_estimate,
+    selected_budget: (ready || isRecalculation) ? null : session.selected_budget,
     model: getAiConfig().model || session.model,
     revision: Number(session.revision) + 1
   }, { transaction });
@@ -571,6 +662,15 @@ const sendSessionMessage = async ({
 
   const config = getAiConfig();
   try {
+    const conversationLanguage = resolveConversationLanguage(
+      reservation.session.structured_state?.conversation_language,
+      messageText
+    );
+    const providerStructuredState = {
+      ...(reservation.session.structured_state || {}),
+      conversation_language: conversationLanguage,
+      ...(isRecalculation ? { diagnosis_confirmation: 'CORRECTING' } : {})
+    };
     const [serviceCatalog, recentMessages] = await Promise.all([
       Service.findAll({
         where: { is_active: true },
@@ -584,8 +684,9 @@ const sendSessionMessage = async ({
       )
     ]);
     const providerResult = await analyzeConversation({
+      conversationLanguage,
       serviceCatalog,
-      structuredState: reservation.session.structured_state || {},
+      structuredState: providerStructuredState,
       recentMessages,
       customerMessage: messageText,
       correlationId,
@@ -603,21 +704,6 @@ const sendSessionMessage = async ({
         attributes: ['id', 'service_code', 'name']
       })
       : null;
-    const prospectiveState = mergeStructuredState(
-      reservation.session.structured_state || {},
-      providerResult.data
-    );
-    const ready = providerResult.data.stage === 'READY_FOR_ESTIMATE'
-      && resolvedService
-      && String(prospectiveState.problem_summary || '').length >= 10
-      && String(prospectiveState.issue_description || '').length >= 10
-      && prospectiveState.missing_information.length === 0;
-    const estimate = ready
-      ? await estimateHistoricalPrice({
-        serviceId: resolvedService.id,
-        currentState: prospectiveState
-      })
-      : null;
     const committed = await commitProviderResponse({
       customerId,
       sessionId,
@@ -626,8 +712,8 @@ const sendSessionMessage = async ({
       analysis: providerResult.data,
       providerMetadata: providerResult.metadata,
       resolvedService,
-      estimate,
-      isRecalculation
+      isRecalculation,
+      conversationLanguage
     });
     if (committed.expired) {
       throw new AiError('AI assistant session has expired.', 410, 'AI_SESSION_EXPIRED');

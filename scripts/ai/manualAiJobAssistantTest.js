@@ -123,7 +123,25 @@ for (const message of messages) {
   );
   if (!sent.response.ok) break;
   session = sent.payload.DT;
-  if (session.status === 'ESTIMATE_PRESENTED') break;
+  if (session.stage === 'REVIEW_DIAGNOSIS'
+    || session.status === 'ESTIMATE_PRESENTED') break;
+}
+
+if (session.stage === 'REVIEW_DIAGNOSIS') {
+  const confirmed = await request(
+    baseUrl,
+    token,
+    `/ai/job-assistant/sessions/${session.session_id}/diagnosis-decision`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'CONFIRM_DIAGNOSIS',
+        expected_revision: session.revision
+      })
+    }
+  );
+  assert(confirmed.response.ok, 'Diagnosis confirmation failed.');
+  session = confirmed.payload.DT;
 }
 
 if (session.status === 'ESTIMATE_PRESENTED') {

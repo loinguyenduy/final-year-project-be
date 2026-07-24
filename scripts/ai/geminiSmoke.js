@@ -7,6 +7,7 @@ const startedAt = Date.now();
 
 try {
   const result = await analyzeConversation({
+    conversationLanguage: 'EN',
     serviceCatalog: [{ service_code: 'SMOKE_TEST_SERVICE', name: 'Smoke Test Service' }],
     structuredState: {},
     recentMessages: [],

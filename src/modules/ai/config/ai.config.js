@@ -11,7 +11,7 @@ const AI_DEFAULTS = Object.freeze({
   maxActiveSessionsPerCustomer: 3,
   rateLimitWindowMs: 900000,
   rateLimitMax: 20,
-  promptVersion: 'job-diagnosis-v1',
+  promptVersion: 'job-diagnosis-language-confirmation-v2',
   estimatorVersion: 'historical-bid-v1',
   minPriceSamples: 3,
   maxHistoricalCandidates: 100,

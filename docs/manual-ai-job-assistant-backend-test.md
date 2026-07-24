@@ -44,6 +44,31 @@ pre-acceptance cancellation endpoint; never delete or edit financial rows.
 - Invalid structured output retries once, then `AI_RESPONSE_INVALID`.
 - Inspect logs: no key, prompt, Customer message or raw response.
 
+## Language consistency and marketplace wording
+
+Run separate disposable sessions for:
+
+- Vietnamese first meaningful message;
+- English first meaningful message;
+- ambiguous/mixed message;
+- VI session followed by English technical terms without a switch request;
+- explicit “continue in English” and “tiếp tục bằng tiếng Việt”;
+- provider retry after a failed message.
+
+Expected:
+
+- DTO exposes only `conversation_language=VI|EN`;
+- ambiguous first text defaults to VI;
+- ordinary mixed-language text does not change a locked language;
+- explicit switch changes the canonical language and all later Assistant/UI
+  copy follows it;
+- failed provider calls do not lose the language selected when the Customer
+  message was reserved;
+- no response says the platform assigned/will send a technician or states a
+  definite diagnosis;
+- wording remains uncertain and explains that Handymen may submit Bids only
+  after the Customer posts the Job.
+
 ## Authorization and session
 
 - Customer succeeds; Handyman/Admin/inactive participant is denied.
@@ -89,6 +114,16 @@ Using prepared real data, verify:
 
 ## Price decisions
 
+- A complete provider result first exposes `stage=REVIEW_DIAGNOSIS`,
+  `diagnosis_review.confirmation_status=PENDING` and no `latest_estimate`.
+- `CONFIRM_DIAGNOSIS` changes the session to `ESTIMATE_PRESENTED` and is the
+  first point where historical retrieval/estimation may run.
+- `CORRECT_DIAGNOSIS` returns the session to `ACTIVE/CLARIFYING`, clears stale
+  estimate/budget, keeps the composer available and accepts another message.
+- Typing directly while review is pending is treated as a correction; it must
+  not return a premature “draft locked” state.
+- Concurrent confirmations produce one canonical transition; the stale request
+  receives a revision/state conflict.
 - Accept valid range.
 - Reject accept when estimate is insufficient.
 - Recalculate with current revision and stable client UUID.
@@ -96,6 +131,9 @@ Using prepared real data, verify:
 - Accept valid own integer budget; reject zero, fractional, overflow and max<min.
 - Continue without estimate produces no invented amount.
 - Repeated same terminal decision replays; different terminal decision conflicts.
+
+The guarded manual script confirms diagnosis automatically when it reaches
+`REVIEW_DIAGNOSIS`, then continues with the configured price decision.
 
 ## Create Job and DTO
 

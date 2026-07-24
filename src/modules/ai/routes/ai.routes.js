@@ -7,6 +7,7 @@ import {
 import {
   handleAbandonSession,
   handleCreateSession,
+  handleDiagnosisDecision,
   handleGetSession,
   handlePriceDecision,
   handleSendMessage
@@ -26,6 +27,7 @@ router.use(aiCustomerRateLimiter);
 router.post('/sessions', handleCreateSession);
 router.get('/sessions/:sessionId', handleGetSession);
 router.post('/sessions/:sessionId/messages', handleSendMessage);
+router.post('/sessions/:sessionId/diagnosis-decision', handleDiagnosisDecision);
 router.post('/sessions/:sessionId/price-decision', handlePriceDecision);
 router.post('/sessions/:sessionId/abandon', handleAbandonSession);
 

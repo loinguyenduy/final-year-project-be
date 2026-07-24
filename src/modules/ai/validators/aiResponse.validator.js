@@ -11,6 +11,8 @@ const HTML_PATTERN = /<\/?[a-z][^>]*>/i;
 
 const RESPONSE_KEYS = new Set([
   'assistant_message',
+  'device_age_or_usage_duration',
+  'device_or_work_area',
   'stage',
   'service_code',
   'problem_summary',
@@ -96,6 +98,16 @@ const validateAiStructuredResponse = (value) => {
       minimum: 1
     }),
     stage: requireEnum(value.stage, AI_MODEL_STAGES, 'stage'),
+    device_or_work_area: normalizeText(value.device_or_work_area, {
+      field: 'device_or_work_area',
+      maximum: 200,
+      nullable: true
+    }),
+    device_age_or_usage_duration: normalizeText(value.device_age_or_usage_duration, {
+      field: 'device_age_or_usage_duration',
+      maximum: 200,
+      nullable: true
+    }),
     service_code: serviceCode,
     problem_summary: normalizeText(value.problem_summary, {
       field: 'problem_summary',
@@ -140,4 +152,38 @@ const validateAiStructuredResponse = (value) => {
   };
 };
 
-export { validateAiStructuredResponse };
+const FORBIDDEN_MARKETPLACE_CLAIMS = Object.freeze([
+  /\bwe(?:'ll| will)\s+(?:send|assign|dispatch)\s+(?:a\s+)?(?:technician|handyman)\b/iu,
+  /\b(?:a\s+)?(?:technician|handyman)\s+(?:has been|is|will be)\s+assigned\b/iu,
+  /\bthe (?:problem|issue|fault)\s+is definitely caused by\b/iu,
+  /\bdefinitely\s+(?:caused by|means|is)\b/iu,
+  /\bchúng tôi sẽ\s+(?:cử|gửi|điều)\s+(?:một\s+)?(?:kỹ thuật viên|handyman)\b/iu,
+  /\b(?:kỹ thuật viên|handyman)\s+(?:đã|sẽ)\s+được\s+(?:cử|phân công|điều)\b/iu,
+  /\b(?:vấn đề|sự cố|lỗi)\s+chắc chắn\s+(?:do|bởi|là)\b/iu
+]);
+
+const assertMarketplaceSafeResponse = (response) => {
+  const visibleText = [
+    response.assistant_message,
+    response.safety_message,
+    response.problem_summary,
+    response.form_patch?.issue_description,
+    response.device_or_work_area,
+    response.device_age_or_usage_duration,
+    ...(response.symptoms || []),
+    ...(response.follow_up_questions || [])
+  ].filter(Boolean).join('\n');
+  if (FORBIDDEN_MARKETPLACE_CLAIMS.some((pattern) => pattern.test(visibleText))) {
+    throw new AiError(
+      'Gemini returned an unsupported marketplace or diagnosis claim.',
+      502,
+      'AI_RESPONSE_INVALID'
+    );
+  }
+  return response;
+};
+
+export {
+  assertMarketplaceSafeResponse,
+  validateAiStructuredResponse
+};

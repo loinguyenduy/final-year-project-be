@@ -4,15 +4,25 @@ const VIETNAMESE_DIACRITIC_PATTERN = /[ăâđêôơưáàảãạấầẩẫậ
 const WORD_PATTERN = /\p{L}+/gu;
 
 const VIETNAMESE_WORDS = new Set([
-  'bị', 'có', 'của', 'đã', 'đang', 'điều', 'điện', 'gia', 'giúp', 'hòa',
-  'không', 'lạnh', 'máy', 'mát', 'mùi', 'nhà', 'nhẹ', 'nóng', 'nước', 'ồn',
-  'sửa', 'thấy', 'thiết', 'tôi', 'trong', 'và', 'vẫn'
+  'ban', 'bạn', 'bi', 'bị', 'can', 'cần', 'chao', 'chào', 'co', 'có', 'cua', 'của',
+  'da', 'đã', 'dang', 'đang', 'dieu', 'điều', 'dien', 'điện', 'duoc', 'được',
+  'gia', 'giup', 'giúp', 'hoa', 'hòa', 'hong', 'hỏng', 'khong', 'không', 'lanh',
+  'lạnh', 'loi', 'lỗi', 'may', 'máy', 'mat', 'mát', 'mui', 'mùi', 'nha', 'nhà',
+  'nhe', 'nhẹ', 'nó', 'nong', 'nóng', 'nuoc', 'nước', 'ồn', 'sua',
+  'sửa', 'thay', 'thấy', 'thiet', 'thiết', 'toi', 'tôi', 'trong', 'va', 'và',
+  'van', 'vẫn'
 ]);
 
 const ENGLISH_WORDS = new Set([
-  'air', 'and', 'appliance', 'conditioner', 'cooling', 'does', 'five', 'for',
-  'from', 'has', 'house', 'is', 'it', 'light', 'my', 'noise', 'not', 'problem',
-  'repair', 'the', 'there', 'this', 'water', 'with', 'work', 'years'
+  'a', 'air', 'an', 'and', 'appliance', 'are', 'bathroom', 'broken', 'can',
+  'ceiling', 'clogged', 'conditioner', 'cooling', 'could', 'does', 'door',
+  'drain', 'electrical', 'fan', 'five', 'fix', 'for', 'freezer', 'fridge', 'from',
+  'has', 'have', 'heating', 'hello', 'help', 'hey', 'hi', 'hot', 'house', 'i',
+  'is', 'issue', 'it', 'kitchen', 'leak', 'leaking', 'light', 'machine', 'may',
+  'me', 'my', 'need', 'no', 'noise', 'not', 'on', 'outlet', 'oven', 'pipe',
+  'please', 'power', 'problem', 'refrigerator', 'repair', 'sink', 'socket',
+  'stopped', 'the', 'there', 'this', 'to', 'today', 'toilet', 'washer', 'washing',
+  'water', 'with', 'work', 'working', 'would', 'years', 'yesterday', 'you'
 ]);
 
 const normalizeLanguage = (value) => (
@@ -69,6 +79,7 @@ const detectConversationLanguage = (message) => {
   );
   if (vietnameseScore >= 2 && vietnameseScore >= englishScore) return 'VI';
   if (englishScore >= 2 && englishScore > vietnameseScore) return 'EN';
+  if (englishScore === 1 && vietnameseScore === 0) return 'EN';
   return null;
 };
 

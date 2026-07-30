@@ -11,11 +11,17 @@ import {
     handleRemoveHandymanServiceArea,
     handleUpdateHandymanWorkTimes
 } from '../controllers/Profile.controller.js';
+import { handleGetOverview, handleGetPublicProfile } from '../controllers/Profile.controller.js';
 import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
+import { getPublicReviews } from '../../dispute/controllers/Review.controller.js';
 
 const router = express.Router();
 
 router.get('/profile', checkUserJWT, handleGetUserProfile);
+router.get('/customer/overview', checkUserJWT, checkUserRole(['CUSTOMER']), handleGetOverview);
+router.get('/handyman/overview', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetOverview);
+router.get('/users/:userId/public-profile', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN']), handleGetPublicProfile);
+router.get('/users/:userId/reviews', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN']), getPublicReviews);
 
 // Section 1 — Address (shared by all roles)
 router.put('/profile/address', checkUserJWT, handleUpdateUserAddress);

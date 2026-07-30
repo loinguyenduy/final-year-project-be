@@ -7,6 +7,7 @@ import {
     linkFacebookProvider
 } from '../services/SocialAuth.service.js';
 import dotenv from 'dotenv';
+import { setRefreshCookie } from '../utils/authCookie.util.js';
 
 dotenv.config();
 
@@ -49,14 +50,13 @@ const handleGoogleCallback = async (req, res) => {
         // ── Login / register flow ──
         const data = await upsertGoogleUser(googleProfile);
         if (data.EC === 0) {
-            res.cookie('refreshToken', data.DT.refresh_token, {
-                httpOnly: true,
-                secure: false,
-                sameSite: 'strict',
-                maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000
-            });
+            setRefreshCookie(res, data.DT.refresh_token);
             delete data.DT.refresh_token;
             return res.redirect(`${frontendUrl}/social-callback?token=${data.DT.access_token}`);
+        }
+
+        if (data.code === 'ADMIN_PORTAL_REQUIRED') {
+            return res.redirect(`${frontendUrl}/login?error=admin_portal_required`);
         }
 
         return res.redirect(`${frontendUrl}/login?error=social_auth_failed`);
@@ -82,6 +82,10 @@ const handleGoogleLinkInitiate = (req, res, next) => {
         role   = decoded.role;
     } catch {
         return res.redirect(`${frontendUrl}/social-link-callback?error=invalid_token`);
+    }
+
+    if (role === 'ADMIN') {
+        return res.redirect(`${frontendUrl}/social-link-callback?error=admin_portal_required`);
     }
 
     const state = jwt.sign(
@@ -120,14 +124,13 @@ const handleFacebookCallback = async (req, res) => {
         // ── Login / register flow ──
         const data = await upsertFacebookUser(req.user);
         if (data.EC === 0) {
-            res.cookie('refreshToken', data.DT.refresh_token, {
-                httpOnly: true,
-                secure: false,
-                sameSite: 'strict',
-                maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000
-            });
+            setRefreshCookie(res, data.DT.refresh_token);
             delete data.DT.refresh_token;
             return res.redirect(`${frontendUrl}/social-callback?token=${data.DT.access_token}`);
+        }
+
+        if (data.code === 'ADMIN_PORTAL_REQUIRED') {
+            return res.redirect(`${frontendUrl}/login?error=admin_portal_required`);
         }
 
         return res.redirect(`${frontendUrl}/login?error=facebook_auth_failed`);
@@ -153,6 +156,10 @@ const handleFacebookLinkInitiate = (req, res, next) => {
         role   = decoded.role;
     } catch {
         return res.redirect(`${frontendUrl}/social-link-callback?error=invalid_token`);
+    }
+
+    if (role === 'ADMIN') {
+        return res.redirect(`${frontendUrl}/social-link-callback?error=admin_portal_required`);
     }
 
     const state = jwt.sign(

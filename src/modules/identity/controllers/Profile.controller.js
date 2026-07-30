@@ -10,6 +10,7 @@ import {
     removeHandymanServiceAreaService,
     updateHandymanWorkTimesService
 } from "../services/Profile.service.js";
+import { getOverview, getPublicProfile } from '../services/ParticipantRead.service.js';
 
 const handleGetUserProfile = async (req, res) => {
     try {
@@ -21,6 +22,26 @@ const handleGetUserProfile = async (req, res) => {
     } catch (error) {
         console.error(">>> Error in handleGetUserProfile: ", error);
         return res.status(500).json({ EM: "Internal server error.", EC: 500, DT: "" });
+    }
+};
+
+const handleGetOverview = async (req, res) => {
+    try {
+        return res.status(200).json({ EM: 'Overview retrieved successfully.', EC: 0, code: 'PARTICIPANT_OVERVIEW_RETRIEVED', DT: await getOverview(req.user) });
+    } catch (error) {
+        console.error('[participant-overview] Request failed.', { correlation_id: req.correlationId || null, error: error?.message || 'Unknown error' });
+        return res.status(500).json({ EM: 'Unable to retrieve the participant overview.', EC: 500, code: 'INTERNAL_SERVER_ERROR', DT: '' });
+    }
+};
+
+const handleGetPublicProfile = async (req, res) => {
+    try {
+        const data = await getPublicProfile(req.params.userId);
+        if (!data) return res.status(404).json({ EM: 'Participant profile was not found.', EC: 404, code: 'PUBLIC_PROFILE_NOT_FOUND', DT: '' });
+        return res.status(200).json({ EM: 'Public profile retrieved successfully.', EC: 0, code: 'PUBLIC_PROFILE_RETRIEVED', DT: data });
+    } catch (error) {
+        console.error('[public-profile] Request failed.', { correlation_id: req.correlationId || null, error: error?.message || 'Unknown error' });
+        return res.status(500).json({ EM: 'Unable to retrieve the public profile.', EC: 500, code: 'INTERNAL_SERVER_ERROR', DT: '' });
     }
 };
 
@@ -185,6 +206,8 @@ const handleUpdateHandymanWorkTimes = async (req, res) => {
 
 export {
     handleGetUserProfile,
+    handleGetOverview,
+    handleGetPublicProfile,
     handleUpdateUserAddress,
     handleUpdateHandymanBio,
     handleGetHandymanServices,

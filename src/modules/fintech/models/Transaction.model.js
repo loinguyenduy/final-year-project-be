@@ -17,10 +17,14 @@ const Transaction = db.define('Transaction', {
             'WITHDRAW',
             'DEPOSIT_10',
             'LOCK_100',
+            'PLATFORM_FEE_10',
+            'WARRANTY_HOLD_20',
+            'DISBURSE_80',
             'PLATFORM_SERVICE_FEE',
             'WARRANTY_RESERVE_HOLD',
             'HANDYMAN_PARTIAL_RELEASE',
             'WARRANTY_RELEASE',
+            'WARRANTY_REFUND',
             'REFUND',
             'DEPOSIT_REFUND',
             'BONDING_DEPOSIT',
@@ -137,6 +141,26 @@ const Transaction = db.define('Transaction', {
         {
             name: 'transactions_warranty_type',
             fields: ['warranty_id', 'transaction_type']
+        },
+        {
+            name: 'transactions_job_created_id',
+            fields: ['job_id', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_type_status_created_id',
+            fields: ['transaction_type', 'status', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_from_wallet_created_id',
+            fields: ['from_wallet_id', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_to_wallet_created_id',
+            fields: ['to_wallet_id', 'createdAt', 'id']
+        },
+        {
+            name: 'transactions_payer_created_id',
+            fields: ['payer_user_id', 'createdAt', 'id']
         },
         {
             name: 'transactions_one_successful_remaining_payment_per_quote',

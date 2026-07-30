@@ -75,14 +75,20 @@ const getSystemWalletsService = async () => {
 
     const wallets = await Wallet.findAll({
       where: { wallet_type: SYSTEM_WALLET_TYPES },
-      attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked', 'updatedAt'],
+      attributes: ['wallet_type', 'balance', 'currency', 'is_blocked', 'updatedAt'],
       order: [['wallet_type', 'ASC']]
     });
 
     return {
       EM: "System wallets retrieved successfully.",
       EC: 0,
-      DT: wallets
+      DT: wallets.map((wallet) => ({
+        wallet_type: wallet.wallet_type,
+        currency: wallet.currency,
+        available_balance: String(wallet.balance ?? '0.00'),
+        status: wallet.is_blocked ? 'BLOCKED' : 'ACTIVE',
+        updated_at: wallet.updatedAt
+      }))
     };
   } catch (error) {
     console.error(">>> Error in getSystemWalletsService:", error);

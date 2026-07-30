@@ -8,11 +8,16 @@ import JobStatusHistory from '../models/JobStatusHistory.model.js';
 import Bid from '../models/Bid.model.js';
 import Province from '../models/Province.model.js';
 import Ward from '../models/Ward.model.js';
-import db from '../../../core/database/connection.js';
 import { buildMatchResultsForBids } from './CustomerHandymanSelection.service.js';
 import { calculateDistanceKm } from '../utils/location.util.js';
 import JobCancellation from '../models/JobCancellation.model.js';
 import { buildCancellationDto } from '../utils/cancellationPolicy.util.js';
+import { getRatingSummary } from '../../dispute/services/Rating.service.js';
+import JobAiPriceSuggestion from '../../ai/models/JobAiPriceSuggestion.model.js';
+import {
+    SAFE_GUIDANCE_ATTRIBUTES,
+    buildSafeAiPriceGuidance
+} from '../../ai/services/AiJobIntegration.service.js';
 
 const getServicesCategoryService = async () => {
     try {
@@ -65,7 +70,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                         include: [
                             {
                                 model: HandymanProfile,
-                                attributes: ['bayesian_score', 'total_jobs_completed', 'handyman_level'],
+                                attributes: ['total_jobs_completed', 'handyman_level'],
                                 required: false
                             }
                         ]
@@ -92,13 +97,7 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                 {
                     model: User,
                     as: 'Customer',
-                    attributes: [
-                        'id', 'full_name', 'avatar_url', 'phone_number', 'kyc_status',
-                        [
-                            db.literal(`(SELECT COALESCE(ROUND(AVG(r.rating_stars::numeric), 1), 0) FROM "Reviews" r WHERE r.reviewee_id = "Customer"."id")`),
-                            'avg_rating'
-                        ]
-                    ]
+                    attributes: ['id', 'full_name', 'avatar_url', 'phone_number', 'kyc_status']
                 },
                 {
                     model: User,
@@ -134,6 +133,12 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
                         }
                     ]
                 },
+                {
+                    model: JobAiPriceSuggestion,
+                    as: 'AiPriceSuggestion',
+                    attributes: SAFE_GUIDANCE_ATTRIBUTES,
+                    required: false
+                },
                 bidInclude
             ],
             order: [
@@ -146,6 +151,9 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
         }
 
         let responseData = job.toJSON();
+        if (responseData.Customer?.id) {
+            responseData.Customer.rating_summary = await getRatingSummary(responseData.Customer.id, 'CUSTOMER');
+        }
         const isAdmin = requestingUser?.role === 'ADMIN';
         const isOwnerCustomer = requestingUser?.role === 'CUSTOMER'
             && responseData.customer_id === requestingUser.id;
@@ -165,6 +173,13 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
         ) {
             return { EM: "You do not have permission to view this job.", EC: 403, DT: "" };
         }
+
+        const safeAiGuidance = isOpenForBidding
+            && ['CUSTOMER', 'HANDYMAN'].includes(requestingUser?.role)
+            ? buildSafeAiPriceGuidance(responseData.AiPriceSuggestion)
+            : null;
+        delete responseData.AiPriceSuggestion;
+        if (safeAiGuidance) responseData.ai_price_guidance = safeAiGuidance;
 
         responseData.allowed_actions = isOwnerCustomer
             ? responseData.current_status === 'POSTED'
@@ -190,10 +205,21 @@ const getJobDetailsByIdService = async (jobId, requestingUser, { current_lat = n
             responseData.Bids = responseData.Bids
                 .map((bid) => {
                     const matchResult = matchResultByBidId.get(bid.id);
-                    if (!matchResult) return bid;
+                    const normalizedUser = bid.User ? {
+                        ...Object.fromEntries(Object.entries(bid.User).filter(([key]) => key !== 'Handyman_Profile')),
+                        profile: bid.User.Handyman_Profile || null
+                    } : null;
+                    if (!matchResult) return { ...bid, User: normalizedUser };
 
                     return {
                         ...bid,
+                        User: normalizedUser ? {
+                            ...normalizedUser,
+                            profile: {
+                                ...(normalizedUser.profile || {}),
+                                rating_summary: matchResult.handyman.rating_summary
+                            }
+                        } : normalizedUser,
                         completed_same_service_jobs: matchResult.completed_same_service_jobs,
                         match_score: matchResult.match_score,
                         match_score_details: matchResult.match_score_details,

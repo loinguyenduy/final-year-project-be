@@ -10,6 +10,8 @@ import {
     JOB_LIFECYCLE_EVENTS,
     emitJobLifecycleEvent
 } from '../sockets/JobLifecycle.gateway.js';
+import { getReviewStateMap } from '../../dispute/services/Review.service.js';
+import { actionForStatus, ACTIVE_STATUSES } from '../../identity/services/ParticipantRead.service.js';
 
 const emitBidEvent = ({ event, job, bid, previousStatus = null }) => emitJobLifecycleEvent({
     event,
@@ -300,12 +302,66 @@ const withdrawBidService = async (handymanId, jobId, bidId) => {
     }
 };
 
-const getMyBidsService = async (handymanId) => {
+const getMyBidsService = async (handymanId, query = {}) => {
     try {
-        const bids = await Bid.findAll({
+        const page = Math.max(1, Number.parseInt(query.page || '1', 10) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number.parseInt(query.page_size || '20', 10) || 20));
+        const view = String(query.view || 'ALL').toUpperCase();
+        const status = String(query.status || 'ALL').toUpperCase();
+        const sort = String(query.sort || 'UPDATED_DESC').toUpperCase();
+        if (!['ALL', 'BIDDING', 'ASSIGNED', 'NEEDS_ACTION', 'CLOSED', 'CANCELLED'].includes(view)
+            || !['UPDATED_DESC', 'SCHEDULED_ASC', 'CREATED_DESC', 'BID_CREATED_DESC'].includes(sort)
+            || (status !== 'ALL' && !Job.rawAttributes.current_status.values.includes(status))) {
+            return { EM: 'My Jobs filters are invalid.', EC: 400, code: 'VALIDATION_ERROR', DT: '' };
+        }
+        const jobWhere = {
+            ...(status !== 'ALL' ? { current_status: status }
+                : view === 'BIDDING' ? { current_status: { [Op.in]: ['POSTED', 'BIDDING', 'PENDING_DEPOSIT'] } }
+                    : view === 'CLOSED' ? { current_status: 'CLOSED' }
+                        : view === 'CANCELLED' ? { current_status: 'CANCELLED' }
+                            : {}),
+            ...(view === 'ASSIGNED' ? { selected_handyman_id: handymanId, current_status: { [Op.in]: ACTIVE_STATUSES } } : {})
+        };
+        const order = {
+            UPDATED_DESC: [[Job, 'updatedAt', 'DESC'], ['id', 'DESC']],
+            SCHEDULED_ASC: [[Job, 'scheduled_at', 'ASC'], ['id', 'ASC']],
+            CREATED_DESC: [[Job, 'createdAt', 'DESC'], ['id', 'DESC']],
+            BID_CREATED_DESC: [['createdAt', 'DESC'], ['id', 'DESC']]
+        }[sort];
+        let needsActionTotal = null;
+        let needsActionBidIds = null;
+        if (view === 'NEEDS_ACTION') {
+            const actionStatuses = Job.rawAttributes.current_status.values.filter((entry) => actionForStatus(entry, 'HANDYMAN'));
+            const candidateBids = await Bid.findAll({
+                where: { handyman_id: handymanId, status: { [Op.ne]: 'WITHDRAWN' } },
+                attributes: ['id'],
+                include: [{
+                    model: Job,
+                    attributes: ['id', 'current_status', 'acceptance_cycle', 'customer_id', 'selected_handyman_id', 'createdAt', 'updatedAt', 'scheduled_at'],
+                    where: {
+                        ...(status !== 'ALL' ? { current_status: status } : { current_status: { [Op.in]: [...new Set([...actionStatuses, 'CLOSED'])] } })
+                    },
+                    required: true
+                }],
+                order
+            });
+            const candidateStates = await getReviewStateMap({ jobs: candidateBids.map((entry) => entry.Job), actor: { id: handymanId, role: 'HANDYMAN' } });
+            const actionable = candidateBids.filter((entry) => candidateStates.get(entry.Job.id)?.status === 'PENDING'
+                || (entry.Job.selected_handyman_id === handymanId
+                    && Boolean(actionForStatus(entry.Job.current_status, 'HANDYMAN'))));
+            needsActionTotal = actionable.length;
+            needsActionBidIds = actionable
+                .slice((page - 1) * pageSize, page * pageSize)
+                .map((entry) => entry.id);
+            if (!needsActionBidIds.length) {
+                return { EM: 'My bids retrieved successfully.', EC: 0, DT: { items: [], pagination: { page, page_size: pageSize, total_items: needsActionTotal, total_pages: Math.ceil(needsActionTotal / pageSize) }, filters: { view, status, sort } } };
+            }
+        }
+        const { rows: bids, count } = await Bid.findAndCountAll({
             where: {
                 handyman_id: handymanId,
-                status: { [Op.ne]: 'WITHDRAWN' }
+                status: { [Op.ne]: 'WITHDRAWN' },
+                ...(needsActionBidIds ? { id: { [Op.in]: needsActionBidIds } } : {})
             },
             include: [
                 {
@@ -315,6 +371,8 @@ const getMyBidsService = async (handymanId) => {
                         'estimated_budget_min', 'estimated_budget_max', 'final_agreed_price',
                         'selected_handyman_id', 'province_code', 'ward_code', 'createdAt'
                     ],
+                    where: jobWhere,
+                    required: true,
                     include: [
                         {
                             model: Service,
@@ -333,13 +391,17 @@ const getMyBidsService = async (handymanId) => {
                     ]
                 }
             ],
-            order: [['createdAt', 'DESC']]
+            order,
+            limit: pageSize,
+            offset: needsActionBidIds ? 0 : (page - 1) * pageSize,
+            distinct: true
         });
 
         const unlockedStatuses = [
             'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'QUOTE_PENDING', 'PAYMENT_PENDING',
             'CANCELLATION_REVIEW', 'IN_PROGRESS', 'WARRANTY', 'CLOSED', 'CANCELLED'
         ];
+        const reviewStates = await getReviewStateMap({ jobs: bids.map((entry) => entry.Job).filter(Boolean), actor: { id: handymanId, role: 'HANDYMAN' } });
         const safeBids = bids.map((bid) => {
             const data = bid.toJSON();
             const job = data.Job;
@@ -359,13 +421,19 @@ const getMyBidsService = async (handymanId) => {
                 ].filter(Boolean).join(', ');
             }
 
-            return data;
+            const review = reviewStates.get(job?.id) || { status: 'NOT_AVAILABLE' };
+            const actionLabel = review.status === 'PENDING'
+                ? 'Rate this customer'
+                : job?.selected_handyman_id === handymanId
+                    ? actionForStatus(job?.current_status, 'HANDYMAN')
+                    : null;
+            return { ...data, needs_action: Boolean(actionLabel), action_summary: actionLabel ? { label: actionLabel, destination: `/handyman/jobs/${job.id}` } : null, review_state: review.status };
         });
-
-        return { EM: "My bids retrieved successfully.", EC: 0, DT: safeBids };
+        const filtered = view === 'NEEDS_ACTION' ? safeBids.filter((entry) => entry.needs_action) : safeBids;
+        return { EM: "My bids retrieved successfully.", EC: 0, DT: { items: filtered, pagination: { page, page_size: pageSize, total_items: needsActionTotal ?? count, total_pages: Math.ceil((needsActionTotal ?? count) / pageSize) }, filters: { view, status, sort } } };
     } catch (error) {
         console.log(">>> Error in getMyBidsService: ", error);
-        return { EM: "Internal server error.", EC: 500, DT: [] };
+        return { EM: "Internal server error.", EC: 500, DT: "" };
     }
 };
 

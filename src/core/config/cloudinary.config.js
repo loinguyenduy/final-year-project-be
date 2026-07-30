@@ -11,24 +11,20 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Config Cloudinary Storage for KYC
-const kycStorage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: async (req, file) => {
-    const userId = req.user.id; 
-    return {
-      folder: `final_year_project/kyc/${userId}`, // Create a folder for each user 
-      allowed_formats: ['jpg', 'jpeg', 'png'],
-      // File name format: fieldname_timestamp (e.g., cccd_front_1690000000000.jpg)
-      public_id: `${file.fieldname}_${Date.now()}`, 
-    };
+const kycUploadFields = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 5
   },
-});
-
-// Middleware to handle KYC document uploads
-const uploadKycMiddleware = multer({ 
-  storage: kycStorage,
-  limits: { fileSize: 5 * 1024 * 1024 } 
+  fileFilter: (_req, file, callback) => {
+    if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      const error = new Error('Only JPEG and PNG images are supported.');
+      error.code = 'INVALID_IMAGE_TYPE';
+      return callback(error);
+    }
+    return callback(null, true);
+  }
 }).fields([
   { name: 'cccd_front', maxCount: 1 },
   { name: 'cccd_back', maxCount: 1 },
@@ -36,6 +32,24 @@ const uploadKycMiddleware = multer({
   { name: 'cv', maxCount: 1 },       
   { name: 'certificate', maxCount: 1 }
 ]);
+
+const uploadKycMiddleware = (req, res, next) => {
+  kycUploadFields(req, res, (error) => {
+    if (!error) return next();
+    const isSizeError = error.code === 'LIMIT_FILE_SIZE';
+    const isCountError = ['LIMIT_FILE_COUNT', 'LIMIT_UNEXPECTED_FILE'].includes(error.code);
+    return res.status(400).json({
+      EM: isSizeError
+        ? 'Each KYC document must be 5 MB or smaller.'
+        : isCountError
+          ? 'The KYC document set contains an unexpected or duplicate file.'
+          : error.message || 'Invalid KYC document upload.',
+      EC: 400,
+      code: isSizeError ? 'KYC_FILE_TOO_LARGE' : 'VALIDATION_ERROR',
+      DT: ''
+    });
+  });
+};
 
 // Config Cloudinary Storage for Job Photos
 const jobStorage = new CloudinaryStorage({

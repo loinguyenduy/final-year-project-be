@@ -1,5 +1,7 @@
 import { Op } from 'sequelize';
+import { randomUUID } from 'node:crypto';
 import db from '../../../core/database/connection.js';
+import { emitToRole } from '../../../core/realtime/realtime.gateway.js';
 import { CONVERSATION_CLOSED_REASONS } from '../../chat/constants/chat.constants.js';
 import Conversation from '../../chat/models/Conversation.model.js';
 import { closeConversationRecord } from '../../chat/services/ConversationLifecycle.service.js';
@@ -133,6 +135,13 @@ const createWarrantyCompletionRequestService = async (jobId, handymanId, payload
             where: { warranty_id: warranty.id },
             transaction
         });
+        if (requestCount >= 2) {
+            return rollbackWith(transaction, serviceError(
+                'The maximum of two Warranty rework cycles has been reached.',
+                409,
+                'REWORK_CYCLE_LIMIT_REACHED'
+            ));
+        }
         const requestedAt = new Date();
         const request = await WarrantyCompletionRequest.create({
             job_id: job.id,
@@ -367,6 +376,12 @@ const rejectWarrantyCompletionRequestService = async (jobId, requestId, currentU
         await claim.update({ status: 'REVIEW_REQUIRED' }, { transaction });
         await warranty.update({ status: 'REVIEW_REQUIRED' }, { transaction });
         await transaction.commit();
+
+        emitToRole('ADMIN', 'ADMIN_REVIEW_QUEUE_UPDATED', {
+            event_id: randomUUID(),
+            occurred_at: respondedAt.toISOString(),
+            queue: 'ADMIN_REVIEW'
+        });
 
         emitJobLifecycleEvent({
             event: JOB_LIFECYCLE_EVENTS.WARRANTY_REWORK_REJECTED,

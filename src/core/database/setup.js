@@ -7,6 +7,11 @@ import KycRequest from '../../modules/identity/models/KycRequest.model.js';
 import HandymanProfile from '../../modules/identity/models/HandymanProfile.model.js';
 import VerificationToken from '../../modules/identity/models/VerificationToken.model.js';
 import RefreshToken from '../../modules/identity/models/RefreshToken.model.js';
+import PasswordActionToken from '../../modules/identity/models/PasswordActionToken.model.js';
+import AdminAuditLog from '../../modules/admin/models/AdminAuditLog.model.js';
+import AiAssistantSession from '../../modules/ai/models/AiAssistantSession.model.js';
+import AiAssistantMessage from '../../modules/ai/models/AiAssistantMessage.model.js';
+import JobAiPriceSuggestion from '../../modules/ai/models/JobAiPriceSuggestion.model.js';
 
 import Province from '../../modules/matchmaking/models/Province.model.js';
 import Ward from '../../modules/matchmaking/models/Ward.model.js';
@@ -54,6 +59,42 @@ KycRequest.belongsTo(User, { as: 'Admin', foreignKey: 'reviewed_by_admin_id' });
 
 User.hasMany(RefreshToken, { foreignKey: 'user_id' });
 RefreshToken.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(PasswordActionToken, { foreignKey: 'user_id' });
+PasswordActionToken.belongsTo(User, { foreignKey: 'user_id' });
+
+User.hasMany(AiAssistantSession, {
+    as: 'AiAssistantSessions',
+    foreignKey: 'customer_id',
+    onDelete: 'RESTRICT'
+});
+AiAssistantSession.belongsTo(User, {
+    as: 'Customer',
+    foreignKey: 'customer_id',
+    onDelete: 'RESTRICT'
+});
+
+AiAssistantSession.hasMany(AiAssistantMessage, {
+    as: 'Messages',
+    foreignKey: 'session_id',
+    onDelete: 'CASCADE'
+});
+AiAssistantMessage.belongsTo(AiAssistantSession, {
+    as: 'Session',
+    foreignKey: 'session_id',
+    onDelete: 'CASCADE'
+});
+
+User.hasMany(AdminAuditLog, {
+    as: 'AdminAuditLogs',
+    foreignKey: 'admin_id',
+    onDelete: 'RESTRICT'
+});
+AdminAuditLog.belongsTo(User, {
+    as: 'Administrator',
+    foreignKey: 'admin_id',
+    onDelete: 'RESTRICT'
+});
 
 User.hasOne(VerificationToken, { foreignKey: 'user_id' });
 VerificationToken.belongsTo(User, { foreignKey: 'user_id' });
@@ -104,6 +145,61 @@ Bid.belongsTo(Job, { foreignKey: 'job_id' });
 
 Bid.hasOne(Job, { as: 'SelectedForJob', foreignKey: 'selected_bid_id' });
 Job.belongsTo(Bid, { as: 'SelectedBid', foreignKey: 'selected_bid_id' });
+
+Service.hasMany(AiAssistantSession, {
+    as: 'AiAssistantSessions',
+    foreignKey: 'detected_service_id',
+    onDelete: 'RESTRICT'
+});
+AiAssistantSession.belongsTo(Service, {
+    as: 'DetectedService',
+    foreignKey: 'detected_service_id',
+    onDelete: 'RESTRICT'
+});
+
+Job.hasOne(AiAssistantSession, {
+    as: 'AppliedAiAssistantSession',
+    foreignKey: 'applied_job_id',
+    onDelete: 'RESTRICT'
+});
+AiAssistantSession.belongsTo(Job, {
+    as: 'AppliedJob',
+    foreignKey: 'applied_job_id',
+    onDelete: 'RESTRICT'
+});
+
+Job.hasOne(JobAiPriceSuggestion, {
+    as: 'AiPriceSuggestion',
+    foreignKey: 'job_id',
+    onDelete: 'RESTRICT'
+});
+JobAiPriceSuggestion.belongsTo(Job, {
+    as: 'Job',
+    foreignKey: 'job_id',
+    onDelete: 'RESTRICT'
+});
+
+AiAssistantSession.hasOne(JobAiPriceSuggestion, {
+    as: 'PriceSuggestionSnapshot',
+    foreignKey: 'assistant_session_id',
+    onDelete: 'RESTRICT'
+});
+JobAiPriceSuggestion.belongsTo(AiAssistantSession, {
+    as: 'AssistantSession',
+    foreignKey: 'assistant_session_id',
+    onDelete: 'RESTRICT'
+});
+
+Service.hasMany(JobAiPriceSuggestion, {
+    as: 'AiPriceSuggestions',
+    foreignKey: 'service_id',
+    onDelete: 'RESTRICT'
+});
+JobAiPriceSuggestion.belongsTo(Service, {
+    as: 'Service',
+    foreignKey: 'service_id',
+    onDelete: 'RESTRICT'
+});
 
 User.hasMany(Bid, { foreignKey: 'handyman_id' });
 Bid.belongsTo(User, { foreignKey: 'handyman_id' });
@@ -319,6 +415,8 @@ User.hasMany(JobWarranty, { as: 'HandymanWarranties', foreignKey: 'handyman_id' 
 JobWarranty.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
 Transaction.hasOne(JobWarranty, { as: 'ReleasedWarranty', foreignKey: 'release_transaction_id' });
 JobWarranty.belongsTo(Transaction, { as: 'ReleaseTransaction', foreignKey: 'release_transaction_id' });
+Transaction.hasOne(JobWarranty, { as: 'RefundedWarranty', foreignKey: 'refund_transaction_id' });
+JobWarranty.belongsTo(Transaction, { as: 'RefundTransaction', foreignKey: 'refund_transaction_id' });
 
 Job.hasMany(WarrantyClaim, { as: 'WarrantyClaims', foreignKey: 'job_id' });
 WarrantyClaim.belongsTo(Job, { foreignKey: 'job_id' });
@@ -330,6 +428,8 @@ User.hasMany(WarrantyClaim, { as: 'HandymanWarrantyClaims', foreignKey: 'handyma
 WarrantyClaim.belongsTo(User, { as: 'Handyman', foreignKey: 'handyman_id' });
 User.hasMany(WarrantyClaim, { as: 'ReviewedWarrantyClaims', foreignKey: 'reviewed_by_admin_id' });
 WarrantyClaim.belongsTo(User, { as: 'ReviewedByAdmin', foreignKey: 'reviewed_by_admin_id' });
+User.hasMany(WarrantyClaim, { as: 'ResolvedWarrantyClaims', foreignKey: 'resolved_by_admin_id' });
+WarrantyClaim.belongsTo(User, { as: 'ResolvedByAdmin', foreignKey: 'resolved_by_admin_id' });
 
 WarrantyClaim.hasMany(WarrantyClaimEvidence, {
     as: 'EvidenceSnapshots',
@@ -480,6 +580,13 @@ const reportIndexSyncFailure = (error) => {
         console.error(
             '[matchmaking] ERROR: DB_SYNC_ALTER could not create Completion/Warranty indexes. '
             + 'Resolve duplicate pending requests, warranties, or active claims before restarting.'
+        );
+    }
+    if (errorText.includes('admin_audit_scoped_idempotency_unique')
+        || errorText.includes('job_warranties_refund_transaction_unique')) {
+        console.error(
+            '[admin-review] ERROR: DB_SYNC_ALTER could not create Task 2 financial/idempotency indexes. '
+            + 'Resolve conflicting data before restarting.'
         );
     }
 };
@@ -684,6 +791,7 @@ const verifyCompletionWarrantySchema = async () => {
         'job_warranties_job_cycle_unique',
         'job_warranties_completion_request_unique',
         'job_warranties_release_transaction_unique',
+        'job_warranties_refund_transaction_unique',
         'warranty_claims_one_active_per_warranty',
         'warranty_claim_evidence_unique',
         'warranty_claim_evidence_one_claim_per_evidence',
@@ -709,6 +817,7 @@ const verifyCompletionWarrantySchema = async () => {
     for (const partialName of [
         'completion_requests_one_pending_per_cycle',
         'job_warranties_release_transaction_unique',
+        'job_warranties_refund_transaction_unique',
         'warranty_claims_one_active_per_warranty',
         'warranty_completion_requests_one_pending'
     ]) {
@@ -746,7 +855,11 @@ const verifyCompletionWarrantySchema = async () => {
         'HANDYMAN_PARTIAL_RELEASE',
         'PLATFORM_SERVICE_FEE',
         'WARRANTY_RESERVE_HOLD',
-        'WARRANTY_RELEASE'
+        'WARRANTY_RELEASE',
+        'WARRANTY_REFUND',
+        'PLATFORM_FEE_10',
+        'WARRANTY_HOLD_20',
+        'DISBURSE_80'
     ];
     const missingLabels = requiredLabels.filter((label) => !labels.has(label));
     if (missingLabels.length > 0) {
@@ -755,6 +868,245 @@ const verifyCompletionWarrantySchema = async () => {
         );
     }
     console.log('Completion and Warranty schema verified successfully.');
+};
+
+const verifyAdminReviewSchema = async () => {
+    const [columns] = await db.query(`
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (
+            (table_name = 'Admin_Audit_Logs' AND column_name IN ('idempotency_key', 'request_fingerprint'))
+            OR (table_name = 'Job_Warranties' AND column_name IN ('warranty_refunded_amount', 'refunded_at', 'refund_transaction_id'))
+            OR (table_name = 'Warranty_Claims' AND column_name = 'resolved_by_admin_id')
+          )
+    `);
+    const found = new Set(columns.map((column) => `${column.table_name}.${column.column_name}`));
+    const requiredColumns = [
+        'Admin_Audit_Logs.idempotency_key',
+        'Admin_Audit_Logs.request_fingerprint',
+        'Job_Warranties.warranty_refunded_amount',
+        'Job_Warranties.refunded_at',
+        'Job_Warranties.refund_transaction_id',
+        'Warranty_Claims.resolved_by_admin_id'
+    ];
+    const missingColumns = requiredColumns.filter((column) => !found.has(column));
+    if (missingColumns.length) {
+        throw new Error(
+            `Required Admin Review columns are missing: ${missingColumns.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    const requiredIndexes = [
+        'admin_audit_scoped_idempotency_unique',
+        'job_warranties_refund_transaction_unique',
+        'warranty_claims_review_queue',
+        'warranty_completion_requests_review_queue',
+        'job_cancellations_review_queue'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const byName = new Map(indexes.map((index) => [index.indexname, String(index.indexdef)]));
+    const missingIndexes = requiredIndexes.filter((name) => !byName.has(name));
+    if (missingIndexes.length) {
+        throw new Error(
+            `Required Admin Review indexes are missing: ${missingIndexes.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    const scopedIndex = byName.get('admin_audit_scoped_idempotency_unique');
+    if (!scopedIndex.includes('UNIQUE') || !scopedIndex.includes('WHERE')
+        || ['action', 'target_type', 'target_id', 'idempotency_key'].some((field) => !scopedIndex.includes(field))) {
+        throw new Error('Admin Review scoped idempotency index is invalid.');
+    }
+    console.log('Admin Review schema verified successfully.');
+};
+
+const verifyAdminJobIndexes = async () => {
+    const requiredIndexes = [
+        ['Jobs', 'jobs_status_created_id'],
+        ['Jobs', 'jobs_service_created_id'],
+        ['Jobs', 'jobs_created_id'],
+        ['Bids', 'bids_job_created_id'],
+        ['Job_Status_Histories', 'job_status_history_job_created_id'],
+        ['Evidence_Vaults', 'evidence_vaults_job_cycle_uploaded_id'],
+        ['Transactions', 'transactions_job_created_id']
+    ];
+    const [indexes] = await db.query(`
+        SELECT tablename, indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map(([, name]) => `'${name}'`).join(', ')})
+    `);
+    const found = new Set(indexes.map((index) => `${index.tablename}:${index.indexname}`));
+    const missing = requiredIndexes.filter(([table, name]) => !found.has(`${table}:${name}`));
+    if (missing.length) {
+        throw new Error(
+            `Required Admin Job indexes are missing: ${missing.map(([, name]) => name).join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    console.log('Admin Job indexes verified successfully.');
+};
+
+const verifyAdminManagementSchema = async () => {
+    const [columns] = await db.query(`
+        SELECT column_name, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Users'
+          AND column_name = 'auth_version'
+    `);
+    const authVersion = columns[0];
+    if (!authVersion || authVersion.is_nullable !== 'NO' || !String(authVersion.column_default || '').includes('0')) {
+        throw new Error(
+            'Required Users.auth_version INTEGER NOT NULL DEFAULT 0 is missing or invalid. '
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    const requiredIndexes = [
+        'users_role_active_created',
+        'users_kyc_created',
+        'refresh_tokens_user_revoked',
+        'wallets_type_blocked_created',
+        'wallets_user_type_unique',
+        'transactions_type_status_created_id',
+        'transactions_from_wallet_created_id',
+        'transactions_to_wallet_created_id',
+        'transactions_payer_created_id',
+        'services_active_name',
+        'reviews_reviewee_created_id'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const found = new Set(indexes.map((index) => index.indexname));
+    const missing = requiredIndexes.filter((name) => !found.has(name));
+    if (missing.length) {
+        throw new Error(
+            `Required Admin Management indexes are missing: ${missing.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    console.log('Admin User, Wallet and Service schema verified successfully.');
+};
+
+const verifyParticipantExperienceSchema = async () => {
+    const [columns] = await db.query(`
+        SELECT table_name, column_name, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND ((table_name = 'Password_Action_Tokens' AND column_name IN
+            ('id', 'user_id', 'purpose', 'token_hash', 'issued_auth_version', 'expires_at', 'consumed_at', 'revoked_at'))
+          OR (table_name = 'Reviews' AND column_name IN ('acceptance_cycle', 'reviewer_role', 'reviewee_role')))
+    `);
+    const found = new Set(columns.map((entry) => `${entry.table_name}.${entry.column_name}`));
+    const required = [
+        'Password_Action_Tokens.id', 'Password_Action_Tokens.user_id', 'Password_Action_Tokens.purpose',
+        'Password_Action_Tokens.token_hash', 'Password_Action_Tokens.issued_auth_version',
+        'Password_Action_Tokens.expires_at', 'Password_Action_Tokens.consumed_at', 'Password_Action_Tokens.revoked_at',
+        'Reviews.acceptance_cycle', 'Reviews.reviewer_role', 'Reviews.reviewee_role'
+    ];
+    const missing = required.filter((entry) => !found.has(entry));
+    if (missing.length) throw new Error(`Required Phase 5 columns are missing: ${missing.join(', ')}. Run one backed-up instance with DB_SYNC_ALTER=true.`);
+    const requiredIndexes = [
+        'password_action_tokens_user_purpose_expiry', 'password_action_tokens_hash_unique',
+        'reviews_canonical_job_cycle_parties_unique', 'reviews_reviewee_created_id', 'reviews_reviewer_created_id'
+    ];
+    const [indexes] = await db.query(`SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})`);
+    const indexSet = new Set(indexes.map((entry) => entry.indexname));
+    const missingIndexes = requiredIndexes.filter((name) => !indexSet.has(name));
+    if (missingIndexes.length) throw new Error(`Required Phase 5 indexes are missing: ${missingIndexes.join(', ')}. Run one backed-up instance with DB_SYNC_ALTER=true.`);
+    const [reviewCounts] = await db.query(`
+        SELECT
+          COUNT(*)::integer AS total_reviews,
+          COUNT(*) FILTER (WHERE acceptance_cycle IS NOT NULL AND reviewer_role IN ('CUSTOMER','HANDYMAN') AND reviewee_role IN ('CUSTOMER','HANDYMAN') AND reviewer_role <> reviewee_role AND rating_stars BETWEEN 1 AND 5)::integer AS canonical_candidates,
+          COUNT(*) FILTER (WHERE acceptance_cycle IS NULL)::integer AS missing_cycle,
+          COUNT(*) FILTER (WHERE reviewer_role IS NULL OR reviewee_role IS NULL)::integer AS missing_roles,
+          COUNT(*) FILTER (WHERE rating_stars NOT BETWEEN 1 AND 5 OR acceptance_cycle < 1 OR reviewer_role NOT IN ('CUSTOMER','HANDYMAN') OR reviewee_role NOT IN ('CUSTOMER','HANDYMAN') OR reviewer_role = reviewee_role)::integer AS invalid_canonical_fields
+        FROM "Reviews"
+    `);
+    console.log('Participant Experience schema verified successfully.', reviewCounts[0]);
+};
+
+const verifyAiJobAssistantSchema = async () => {
+    const requiredColumns = [
+        'AI_Assistant_Sessions.customer_id',
+        'AI_Assistant_Sessions.status',
+        'AI_Assistant_Sessions.stage',
+        'AI_Assistant_Sessions.revision',
+        'AI_Assistant_Sessions.expires_at',
+        'AI_Assistant_Sessions.applied_job_id',
+        'AI_Assistant_Messages.session_id',
+        'AI_Assistant_Messages.sequence',
+        'AI_Assistant_Messages.client_message_id',
+        'Job_AI_Price_Suggestions.job_id',
+        'Job_AI_Price_Suggestions.assistant_session_id',
+        'Job_AI_Price_Suggestions.confidence'
+    ];
+    const [columns] = await db.query(`
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name IN (
+            'AI_Assistant_Sessions',
+            'AI_Assistant_Messages',
+            'Job_AI_Price_Suggestions'
+          )
+    `);
+    const foundColumns = new Set(
+        columns.map((entry) => `${entry.table_name}.${entry.column_name}`)
+    );
+    const missingColumns = requiredColumns.filter((entry) => !foundColumns.has(entry));
+    if (missingColumns.length > 0) {
+        throw new Error(
+            `Required AI Job Assistant columns are missing: ${missingColumns.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+
+    const requiredIndexes = [
+        'ai_assistant_sessions_customer_status_updated',
+        'ai_assistant_sessions_expiry',
+        'ai_assistant_sessions_applied_job_unique',
+        'ai_assistant_messages_session_sequence_unique',
+        'ai_assistant_messages_session_client_unique',
+        'job_ai_price_suggestions_job_unique',
+        'job_ai_price_suggestions_session_unique'
+    ];
+    const [indexes] = await db.query(`
+        SELECT indexname, indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname IN (${requiredIndexes.map((name) => `'${name}'`).join(', ')})
+    `);
+    const byName = new Map(indexes.map((entry) => [entry.indexname, entry.indexdef]));
+    const missingIndexes = requiredIndexes.filter((name) => !byName.has(name));
+    if (missingIndexes.length > 0) {
+        throw new Error(
+            `Required AI Job Assistant indexes are missing: ${missingIndexes.join(', ')}. `
+            + 'Run one backed-up instance with DB_SYNC_ALTER=true.'
+        );
+    }
+    [
+        'ai_assistant_sessions_applied_job_unique',
+        'ai_assistant_messages_session_sequence_unique',
+        'ai_assistant_messages_session_client_unique',
+        'job_ai_price_suggestions_job_unique',
+        'job_ai_price_suggestions_session_unique'
+    ].forEach((name) => {
+        if (!String(byName.get(name)).includes('UNIQUE')) {
+            throw new Error(`Required AI Job Assistant index ${name} must be unique.`);
+        }
+    });
+    console.log('AI Job Assistant schema verified successfully.');
 };
 
 User.hasMany(Review, { foreignKey: 'reviewer_id' });
@@ -787,6 +1139,11 @@ const initDatabase = async () => {
         await verifyCancellationIndexes();
         await verifyQuotePaymentIndexes();
         await verifyCompletionWarrantySchema();
+        await verifyAdminReviewSchema();
+        await verifyAdminJobIndexes();
+        await verifyAdminManagementSchema();
+        await verifyParticipantExperienceSchema();
+        await verifyAiJobAssistantSchema();
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         throw error;

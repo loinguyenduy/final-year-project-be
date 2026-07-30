@@ -71,6 +71,13 @@ const Job = db.define('Job', {
         ),
         defaultValue: 'POSTED' 
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        { name: 'jobs_status_created_id', fields: ['current_status', 'createdAt', 'id'] },
+        { name: 'jobs_service_created_id', fields: ['service_id', 'createdAt', 'id'] },
+        { name: 'jobs_created_id', fields: ['createdAt', 'id'] }
+    ]
+});
 
 export default Job;

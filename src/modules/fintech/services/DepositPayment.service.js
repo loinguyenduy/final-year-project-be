@@ -215,6 +215,7 @@ const acceptBidWithWalletDepositService = async (customerId, jobId, bidId) => {
     });
 
     await trans.commit();
+    
     if (acceptedTransition.transitioned) {
       emitJobLifecycleEvent({
         event: JOB_LIFECYCLE_EVENTS.ACCEPTED,

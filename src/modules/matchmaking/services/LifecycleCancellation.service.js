@@ -1,10 +1,13 @@
 import { Op } from 'sequelize';
+import { randomUUID } from 'node:crypto';
 import db from '../../../core/database/connection.js';
+import { emitToRole } from '../../../core/realtime/realtime.gateway.js';
 import { CONVERSATION_CLOSED_REASONS } from '../../chat/constants/chat.constants.js';
 import Conversation from '../../chat/models/Conversation.model.js';
 import { closeConversationRecord } from '../../chat/services/ConversationLifecycle.service.js';
 import Transaction from '../../fintech/models/Transaction.model.js';
 import Wallet from '../../fintech/models/Wallet.model.js';
+import { settleCancellationFundsInTransaction } from '../../fintech/services/CancellationSettlement.service.js';
 import User from '../../identity/models/User.model.js';
 import Bid from '../models/Bid.model.js';
 import Job from '../models/Job.model.js';
@@ -21,7 +24,6 @@ import {
     CANCELLABLE_JOB_STATUSES,
     buildCancellationDto,
     calculateCancellationDistribution,
-    parseDecimalHundredths,
     parseVndInteger,
     validateCancellationPayload,
     validateCounterpartyResponsePayload
@@ -162,7 +164,6 @@ const existingCancellationResult = (cancellation) => ({
 });
 
 const emitCancellationEvent = ({ event, job, cancellation }) => {
-    const dto = buildCancellationDto(cancellation);
     emitJobLifecycleEvent({
         event,
         userIds: [job.customer_id, job.selected_handyman_id],
@@ -172,56 +173,17 @@ const emitCancellationEvent = ({ event, job, cancellation }) => {
             acceptance_cycle: Number(cancellation.acceptance_cycle),
             status: cancellation.status,
             cancelled_from_status: cancellation.status_when_cancelled,
-            reason: cancellation.reason_code,
-            customer_refund_amount: dto.financial_preview.customer_refund_amount,
-            handyman_compensation_amount:
-                dto.financial_preview.handyman_compensation_amount,
-            resolved_at: cancellation.resolved_at
+            resource: 'CANCELLATION',
+            occurred_at: cancellation.resolved_at || cancellation.requested_at
         }
     });
-};
-
-const lockWallet = (where, transaction) => Wallet.findOne({
-    where,
-    transaction,
-    lock: transaction.LOCK.UPDATE
-});
-
-const createPayoutTransaction = async ({
-    cancellation,
-    job,
-    originalDeposit,
-    transactionType,
-    amount,
-    fromWallet,
-    toWallet,
-    transferKey,
-    transaction
-}) => {
-    if (amount === 0n) return null;
-    const idempotencyKey = `cancellation:${cancellation.id}:${transferKey}`;
-    const existing = await Transaction.findOne({
-        where: { idempotency_key: idempotencyKey },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-    });
-    if (existing) return existing;
-
-    return Transaction.create({
-        amount: amount.toString(),
-        transaction_type: transactionType,
-        status: 'SUCCESS',
-        payment_method: 'INTERNAL',
-        payment_gateway_code: null,
-        description: `${transferKey} for cancelled job ${job.id}`,
-        from_wallet_id: fromWallet.id,
-        to_wallet_id: toWallet.id,
-        job_id: job.id,
-        reference_transaction_id: originalDeposit.id,
-        cancellation_id: cancellation.id,
-        idempotency_key: idempotencyKey,
-        expires_at: null
-    }, { transaction });
+    if (event === JOB_LIFECYCLE_EVENTS.CANCELLATION_REVIEW_REQUIRED) {
+        emitToRole('ADMIN', 'ADMIN_REVIEW_QUEUE_UPDATED', {
+            event_id: randomUUID(),
+            occurred_at: new Date().toISOString(),
+            queue: 'ADMIN_REVIEW'
+        });
+    }
 };
 
 const supersedePendingArrival = (job, cancellation, transaction) => {
@@ -260,163 +222,14 @@ const resolveCancellationInTransaction = async ({
     resolutionNote,
     transaction
 }) => {
-    const customerWallet = await lockWallet({
-        user_id: job.customer_id,
-        wallet_type: 'CUSTOMER_MAIN'
-    }, transaction);
-    if (!customerWallet) {
-        return { error: serviceError('Customer main wallet not found.', 404, 'CUSTOMER_WALLET_NOT_FOUND') };
-    }
-
-    const handymanWallet = await lockWallet({
-        user_id: job.selected_handyman_id,
-        wallet_type: 'HANDYMAN_MAIN'
-    }, transaction);
-    if (!handymanWallet) {
-        return { error: serviceError('Handyman main wallet not found.', 404, 'HANDYMAN_WALLET_NOT_FOUND') };
-    }
-
-    const systemEscrow = await lockWallet({
-        wallet_type: 'SYSTEM_ESCROW',
-        user_id: null
-    }, transaction);
-    if (!systemEscrow) {
-        return { error: serviceError('SYSTEM_ESCROW wallet not found.', 404, 'SYSTEM_ESCROW_WALLET_NOT_FOUND') };
-    }
-    if (customerWallet.is_blocked || handymanWallet.is_blocked || systemEscrow.is_blocked) {
-        return {
-            error: serviceError(
-                'A wallet required for cancellation distribution is blocked.',
-                409,
-                'CANCELLATION_WALLET_BLOCKED'
-            )
-        };
-    }
-
-    const originalDeposit = await Transaction.findOne({
-        where: {
-            id: job.deposit_transaction_id,
-            job_id: job.id,
-            transaction_type: 'DEPOSIT_10',
-            status: 'SUCCESS'
-        },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-    });
-    const originalAmount = parseVndInteger(originalDeposit?.amount);
-    if (!originalDeposit
-        || originalDeposit.to_wallet_id !== systemEscrow.id
-        || !originalAmount.valid
-        || originalAmount.amount !== invariant.depositAmount) {
-        return {
-            error: serviceError(
-                'Original deposit transaction is missing or inconsistent.',
-                409,
-                'ACCEPTED_DATA_INCONSISTENT'
-            )
-        };
-    }
-
-    const priorRelease = await Transaction.findOne({
-        where: {
-            reference_transaction_id: originalDeposit.id,
-            status: 'SUCCESS',
-            [Op.or]: [
-                { transaction_type: 'DEPOSIT_REFUND' },
-                {
-                    transaction_type: {
-                        [Op.in]: ['CANCELLATION_REFUND', 'CANCELLATION_COMPENSATION']
-                    },
-                    cancellation_id: { [Op.ne]: cancellation.id }
-                }
-            ]
-        },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-    });
-    if (priorRelease) {
-        return {
-            error: serviceError(
-                'This deposit has already been released.',
-                409,
-                'DEPOSIT_ALREADY_RELEASED'
-            )
-        };
-    }
-
-    const existingCurrentRelease = await Transaction.findOne({
-        where: {
-            cancellation_id: cancellation.id,
-            status: 'SUCCESS',
-            transaction_type: {
-                [Op.in]: ['CANCELLATION_REFUND', 'CANCELLATION_COMPENSATION']
-            }
-        },
-        transaction,
-        lock: transaction.LOCK.UPDATE
-    });
-    if (existingCurrentRelease) {
-        return {
-            error: serviceError(
-                'Cancellation payout state is inconsistent.',
-                409,
-                'CANCELLATION_PAYOUT_INCONSISTENT'
-            )
-        };
-    }
-
-    const escrowBalance = parseDecimalHundredths(systemEscrow.balance);
-    const requiredHundredths = distribution.depositAmount * 100n;
-    if (!escrowBalance.valid || escrowBalance.amount < requiredHundredths) {
-        return {
-            error: serviceError(
-                'SYSTEM_ESCROW does not have enough balance for this cancellation.',
-                409,
-                'ESCROW_INSUFFICIENT_BALANCE',
-                { required_amount: distribution.depositAmount.toString() }
-            )
-        };
-    }
-
-    await systemEscrow.decrement('balance', {
-        by: distribution.depositAmount.toString(),
-        transaction
-    });
-    if (distribution.customerAmount > 0n) {
-        await customerWallet.increment('balance', {
-            by: distribution.customerAmount.toString(),
-            transaction
-        });
-    }
-    if (distribution.handymanAmount > 0n) {
-        await handymanWallet.increment('balance', {
-            by: distribution.handymanAmount.toString(),
-            transaction
-        });
-    }
-
-    const customerTransaction = await createPayoutTransaction({
-        cancellation,
+    const financial = await settleCancellationFundsInTransaction({
         job,
-        originalDeposit,
-        transactionType: 'CANCELLATION_REFUND',
-        amount: distribution.customerAmount,
-        fromWallet: systemEscrow,
-        toWallet: customerWallet,
-        transferKey: 'CUSTOMER_REFUND',
-        transaction
-    });
-    const handymanTransaction = await createPayoutTransaction({
         cancellation,
-        job,
-        originalDeposit,
-        transactionType: 'CANCELLATION_COMPENSATION',
-        amount: distribution.handymanAmount,
-        fromWallet: systemEscrow,
-        toWallet: handymanWallet,
-        transferKey: 'HANDYMAN_COMPENSATION',
+        invariant,
+        distribution,
         transaction
     });
+    if (financial.error) return financial;
 
     const bidStatus = cancellation.cancelled_by_role === 'CUSTOMER'
         ? 'CANCELLED_BY_CUSTOMER'
@@ -427,10 +240,7 @@ const resolveCancellationInTransaction = async ({
 
     const oldStatus = job.current_status;
     const resolvedAt = new Date();
-    const depositStatus = distribution.handymanAmount === 0n
-        && distribution.platformAmount === 0n
-        ? 'REFUNDED'
-        : 'DISTRIBUTED';
+    const depositStatus = financial.depositStatus;
     await job.update({
         current_status: 'CANCELLED',
         deposit_status: depositStatus,
@@ -467,8 +277,8 @@ const resolveCancellationInTransaction = async ({
         refund_amount: distribution.customerAmount.toString(),
         handyman_compensation_amount: distribution.handymanAmount.toString(),
         platform_amount: distribution.platformAmount.toString(),
-        customer_refund_transaction_id: customerTransaction?.id || null,
-        handyman_compensation_transaction_id: handymanTransaction?.id || null,
+        customer_refund_transaction_id: financial.customerTransaction?.id || null,
+        handyman_compensation_transaction_id: financial.handymanTransaction?.id || null,
         platform_transaction_id: null,
         resolved_at: resolvedAt,
         resolved_by_user_id: resolvedByUserId,
@@ -989,5 +799,7 @@ export {
     createCancellationService,
     emitCancellationEvent,
     getCurrentCancellationService,
-    rejectCancellationService
+    rejectCancellationService,
+    resolveCancellationInTransaction,
+    validateLateLifecycleInvariants
 };

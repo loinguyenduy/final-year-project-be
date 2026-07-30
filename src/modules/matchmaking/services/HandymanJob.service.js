@@ -10,6 +10,12 @@ import Bid from '../models/Bid.model.js';
 import { Op } from 'sequelize';
 import db from '../../../core/database/connection.js';
 import { calculateDistanceKm } from '../utils/location.util.js';
+import { getRatingSummaries } from '../../dispute/services/Rating.service.js';
+import JobAiPriceSuggestion from '../../ai/models/JobAiPriceSuggestion.model.js';
+import {
+    SAFE_GUIDANCE_ATTRIBUTES,
+    buildSafeAiPriceGuidance
+} from '../../ai/services/AiJobIntegration.service.js';
 
 // Work time check in Vietnam timezone (UTC+7)
 // Returns true if the job's scheduled time falls in any of the handyman's preferred slots.
@@ -112,13 +118,7 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                 {
                     model: User,
                     as: 'Customer',
-                    attributes: [
-                        'id', 'full_name', 'avatar_url', 'kyc_status',
-                        [
-                            db.literal(`(SELECT COALESCE(ROUND(AVG(r.rating_stars::numeric), 1), 0) FROM "Reviews" r WHERE r.reviewee_id = "Customer"."id")`),
-                            'avg_rating'
-                        ]
-                    ]
+                    attributes: ['id', 'full_name', 'avatar_url', 'kyc_status']
                     // phone_number intentionally excluded — revealed at ACCEPTED+ in job detail only
                 },
                 {
@@ -129,6 +129,12 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                 {
                     model: Ward,
                     attributes: ['ward_code', 'name'],
+                    required: false
+                },
+                {
+                    model: JobAiPriceSuggestion,
+                    as: 'AiPriceSuggestion',
+                    attributes: SAFE_GUIDANCE_ATTRIBUTES,
                     required: false
                 }
             ],
@@ -141,6 +147,9 @@ const getAvailableJobsForHandymanService = async (handymanId, {
         const processed = jobs
             .map(job => {
                 const data = job.toJSON();
+                const safeAiGuidance = buildSafeAiPriceGuidance(data.AiPriceSuggestion);
+                delete data.AiPriceSuggestion;
+                if (safeAiGuidance) data.ai_price_guidance = safeAiGuidance;
 
                 // Distance
                 if (current_lat != null && current_long != null && data.gps_lat != null && data.gps_long != null) {
@@ -178,6 +187,12 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                 const matchesService = data.Service?.name?.toLowerCase().includes(searchLower);
                 return matchesDesc || matchesService;
             });
+
+        const customerIds = [...new Set(processed.map((entry) => entry.Customer?.id).filter(Boolean))];
+        const customerRatings = await getRatingSummaries(customerIds.map((id) => ({ id, role: 'CUSTOMER' })));
+        processed.forEach((entry) => {
+            if (entry.Customer?.id) entry.Customer.rating_summary = customerRatings.get(entry.Customer.id);
+        });
 
         // Step 5: Sort
         const hasGPS = current_lat != null && current_long != null;

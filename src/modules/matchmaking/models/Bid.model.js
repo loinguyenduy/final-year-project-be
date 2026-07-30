@@ -19,6 +19,11 @@ const Bid = db.define('Bid', {
         ),
         defaultValue: 'PENDING'
     }
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    indexes: [
+        { name: 'bids_job_created_id', fields: ['job_id', 'createdAt', 'id'] }
+    ]
+});
 
 export default Bid;

@@ -25,14 +25,21 @@ const authenticateSocket = async (socket, next) => {
     if (!user.is_active) {
       return next(socketAuthError('User account is inactive.', 'PARTICIPANT_INACTIVE', 409));
     }
-    if (!['CUSTOMER', 'HANDYMAN'].includes(user.role)) {
-      return next(socketAuthError('Only chat participants may connect.', 'SOCKET_UNAUTHORIZED', 403));
+    const tokenAuthVersion = Number.isInteger(verification.decoded.auth_version)
+      ? verification.decoded.auth_version
+      : 0;
+    if (verification.decoded.role !== user.role || tokenAuthVersion !== Number(user.auth_version || 0)) {
+      return next(socketAuthError('This session has been revoked.', 'SESSION_REVOKED', 401));
+    }
+    if (!['CUSTOMER', 'HANDYMAN', 'ADMIN'].includes(user.role)) {
+      return next(socketAuthError('This account role may not connect to realtime services.', 'SOCKET_UNAUTHORIZED', 403));
     }
 
     socket.data.user = {
       id: user.id,
       role: user.role,
-      full_name: user.full_name
+      full_name: user.full_name,
+      auth_version: Number(user.auth_version || 0)
     };
     return next();
   } catch (error) {

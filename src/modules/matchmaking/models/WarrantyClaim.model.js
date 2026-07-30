@@ -34,6 +34,7 @@ const WarrantyClaim = db.define('Warranty_Claim', {
     submitted_at: { type: DataTypes.DATE, allowNull: false },
     reviewed_at: { type: DataTypes.DATE, allowNull: true },
     reviewed_by_admin_id: { type: DataTypes.UUID, allowNull: true },
+    resolved_by_admin_id: { type: DataTypes.UUID, allowNull: true },
     admin_note: { type: DataTypes.TEXT, allowNull: true },
     resolved_at: { type: DataTypes.DATE, allowNull: true }
 }, {
@@ -53,7 +54,8 @@ const WarrantyClaim = db.define('Warranty_Claim', {
                 }
             }
         },
-        { name: 'warranty_claims_job_cycle_status', fields: ['job_id', 'acceptance_cycle', 'status'] }
+        { name: 'warranty_claims_job_cycle_status', fields: ['job_id', 'acceptance_cycle', 'status'] },
+        { name: 'warranty_claims_review_queue', fields: ['status', 'submitted_at', 'id'] }
     ]
 });
 

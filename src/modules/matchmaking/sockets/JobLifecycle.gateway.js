@@ -1,4 +1,5 @@
-import { emitToUsers } from '../../../core/realtime/realtime.gateway.js';
+import { randomUUID } from 'node:crypto';
+import { emitToRole, emitToUsers } from '../../../core/realtime/realtime.gateway.js';
 
 const JOB_LIFECYCLE_EVENTS = Object.freeze({
     BID_SUBMITTED: 'JOB_BID_SUBMITTED',
@@ -29,12 +30,49 @@ const JOB_LIFECYCLE_EVENTS = Object.freeze({
     CANCELLATION_REQUESTED: 'JOB_CANCELLATION_REQUESTED',
     CANCELLATION_REVIEW_REQUIRED: 'JOB_CANCELLATION_REVIEW_REQUIRED',
     CANCELLATION_REJECTED: 'JOB_CANCELLATION_REJECTED',
-    CANCELLED: 'JOB_CANCELLED'
+    CANCELLED: 'JOB_CANCELLED',
+    REVIEW_SUBMITTED: 'JOB_REVIEW_SUBMITTED'
 });
+
+const ADMIN_JOB_UPDATED = 'ADMIN_JOB_UPDATED';
+const recentAdminSignals = new Map();
+const ADMIN_SIGNAL_TTL_MS = 5000;
+
+const normalizeOccurredAt = (value) => {
+    const date = value ? new Date(value) : new Date();
+    return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+};
+
+const emitAdminJobUpdated = ({ jobId, occurredAt, eventId = null, dedupeKey = null }) => {
+    if (!jobId) return null;
+    const normalizedAt = normalizeOccurredAt(occurredAt);
+    const key = dedupeKey || `${jobId}:${normalizedAt}`;
+    const existing = recentAdminSignals.get(key);
+    if (existing) return existing;
+    const signalId = eventId || randomUUID();
+    recentAdminSignals.set(key, signalId);
+    const timer = setTimeout(() => recentAdminSignals.delete(key), ADMIN_SIGNAL_TTL_MS);
+    timer.unref?.();
+    emitToRole('ADMIN', ADMIN_JOB_UPDATED, {
+        event_id: signalId,
+        occurred_at: normalizedAt,
+        resource: { job_id: jobId }
+    });
+    return signalId;
+};
 
 const emitJobLifecycleEvent = ({ event, userIds, payload }) => {
     try {
-        return emitToUsers(userIds, event, payload);
+        const eventId = emitAdminJobUpdated({
+            jobId: payload?.job_id,
+            occurredAt: payload?.occurred_at,
+            eventId: payload?.event_id,
+            dedupeKey: payload?.admin_dedupe_key
+        });
+        return emitToUsers(userIds, event, {
+            ...payload,
+            ...(eventId ? { event_id: eventId } : {})
+        });
     } catch (error) {
         console.error('[matchmaking] Failed to emit lifecycle event.', {
             event,
@@ -46,6 +84,8 @@ const emitJobLifecycleEvent = ({ event, userIds, payload }) => {
 };
 
 export {
+    ADMIN_JOB_UPDATED,
     JOB_LIFECYCLE_EVENTS,
+    emitAdminJobUpdated,
     emitJobLifecycleEvent
 };

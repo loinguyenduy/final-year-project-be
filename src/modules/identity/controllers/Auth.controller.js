@@ -6,6 +6,13 @@ import {
   handleVerifyEmail,
   handleResendVerifyEmail
 } from "../services/Auth.service.js";
+import { clearRefreshCookie, setRefreshCookie } from '../utils/authCookie.util.js';
+
+const getAuditContext = (req) => ({
+  correlationId: req.correlationId,
+  ipAddress: req.ip,
+  userAgent: req.get('user-agent') || null
+});
 
 const registerNewUser = async (req, res) => {
   try {
@@ -67,19 +74,14 @@ const loginUser = async (req, res) => {
     let data = await handleLoginUser(req.body);
 
     if (data && data.EC === 0) {
-      res.cookie("refreshToken", data.DT.refresh_token, {
-        httpOnly: true, // set HttpOnly flag to prevent client-side JS access
-        secure: false,
-        sameSite: "strict",
-        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000,
-      });
-
+      setRefreshCookie(res, data.DT.refresh_token);
       delete data.DT.refresh_token;
     }
 
     return res.status(data.EC === 0 ? 200 : data.EC).json({
       EM: data.EM,
       EC: data.EC,
+      code: data.code,
       DT: data.DT,
     });
   } catch (error) {
@@ -92,6 +94,55 @@ const loginUser = async (req, res) => {
   }
 };
 
+const loginAdmin = async (req, res) => {
+  try {
+    const { valueLogin, email, password } = req.body;
+    const normalizedLogin = String(valueLogin || email || '').trim();
+    if (!normalizedLogin || !password) {
+      return res.status(400).json({
+        EM: 'Administrator email and password are required.',
+        EC: 400,
+        code: 'VALIDATION_ERROR',
+        DT: ''
+      });
+    }
+
+    const data = await handleLoginUser(
+      { valueLogin: normalizedLogin, password },
+      { expectedRole: 'ADMIN', auditContext: getAuditContext(req) }
+    );
+    if (data.EC === 0) {
+      setRefreshCookie(res, data.DT.refresh_token);
+      delete data.DT.refresh_token;
+    }
+    return res.status(data.EC === 0 ? 200 : data.EC).json(data);
+  } catch (error) {
+    console.error('[admin-login] Login failed unexpectedly.', {
+      correlation_id: req.correlationId,
+      error: error.message
+    });
+    return res.status(500).json({
+      EM: 'Unable to sign in to the Admin Portal.',
+      EC: 500,
+      code: 'INTERNAL_SERVER_ERROR',
+      DT: ''
+    });
+  }
+};
+
+const getAdminSession = (req, res) => res.status(200).json({
+  EM: 'Administrator session retrieved successfully.',
+  EC: 0,
+  code: 'ADMIN_SESSION_RETRIEVED',
+  DT: { user: {
+    id: req.admin.id,
+    full_name: req.admin.full_name,
+    email: req.admin.email,
+    role: req.admin.role,
+    is_active: Boolean(req.admin.is_active)
+  } }
+});
+
 const requestRefreshToken = async (req, res) => {
   try {
     const cookieToken = req.cookies.refreshToken;
@@ -100,6 +151,7 @@ const requestRefreshToken = async (req, res) => {
       return res.status(401).json({
         EM: "No refresh token found. Please login again.",
         EC: 401,
+        code: 'SESSION_EXPIRED',
         DT: "",
       });
     }
@@ -107,21 +159,19 @@ const requestRefreshToken = async (req, res) => {
     let data = await handleRefreshToken(cookieToken);
 
     if (data && data.EC === 0) {
-      res.cookie("refreshToken", data.DT.refresh_token, {
-        httpOnly: true,
-        secure: false,
-        sameSite: "strict",
-        maxAge: process.env.COOKIE_REFRESH_MAX_AGE || 604800000,
-      });
-
+      setRefreshCookie(res, data.DT.refresh_token);
       delete data.DT.refresh_token;
     } else {
-      res.clearCookie("refreshToken");
+      clearRefreshCookie(res);
     }
 
-    return res.status(data.EC === 0 ? 200 : data.EC === 403 ? 403 : 401).json({
+    const responseStatus = data.EC === 0
+      ? 200
+      : [401, 403].includes(data.EC) ? data.EC : 500;
+    return res.status(responseStatus).json({
       EM: data.EM,
       EC: data.EC,
+      code: data.code,
       DT: data.DT,
     });
   } catch (error) {
@@ -138,15 +188,9 @@ const logoutUser = async (req, res) => {
   try {
     const cookieToken = req.cookies.refreshToken;
 
-    await handleLogout(cookieToken);
-
-    res.clearCookie("refreshToken");
-
-    return res.status(200).json({
-      EM: "Logout successfully.",
-      EC: 0,
-      DT: "",
-    });
+    const data = await handleLogout(cookieToken, getAuditContext(req));
+    clearRefreshCookie(res);
+    return res.status(data.EC === 0 ? 200 : data.EC).json(data);
   } catch (error) {
     return res.status(500).json({
       EM: "Something went wrong...",
@@ -204,4 +248,13 @@ const resendVerifyEmail = async (req, res) => {
   }
 };
 
-export { registerNewUser, loginUser, requestRefreshToken, logoutUser, verifyEmail, resendVerifyEmail };
+export {
+  getAdminSession,
+  loginAdmin,
+  loginUser,
+  logoutUser,
+  registerNewUser,
+  requestRefreshToken,
+  resendVerifyEmail,
+  verifyEmail
+};

@@ -21,16 +21,26 @@ const parseBoolean = (value) => {
 
 const handleCreateJob = async (req, res) => {
     try {
+        const rejectCreate = async (status, payload, operation = 'create_job_validation_rejected') => {
+            if (req.files?.length) {
+                await cleanupUploadedJobImages(req.files, {
+                    operation,
+                    correlation_id: req.correlationId
+                });
+            }
+            return res.status(status).json(payload);
+        };
         const userId = req.user.id;
         const { 
             service_id, issue_description, scheduled_at,
             address_option, province_code, ward_code, detail_address,
             gps_lat, gps_long, location_source, location_confirmed,
-            estimated_budget_min, estimated_budget_max
+            estimated_budget_min, estimated_budget_max,
+            ai_assistant_session_id
         } = req.body;
 
         if (!service_id || !issue_description || !scheduled_at || !address_option) {
-            return res.status(400).json({
+            return rejectCreate(400, {
                 EM: "Missing required fields: service_id, issue_description, scheduled_at, or address_option.",
                 EC: 400,
                 DT: ""
@@ -40,10 +50,10 @@ const handleCreateJob = async (req, res) => {
         // Validate budget
         if (estimated_budget_min !== undefined && estimated_budget_max !== undefined) {
             if (Number(estimated_budget_min) < 0) {
-                return res.status(400).json({ EM: "Minimum budget cannot be negative.", EC: 400, DT: "" });
+                return rejectCreate(400, { EM: "Minimum budget cannot be negative.", EC: 400, DT: "" });
             }
             if (Number(estimated_budget_min) > Number(estimated_budget_max)) {
-                return res.status(400).json({ EM: "Minimum budget cannot be greater than maximum budget.", EC: 400, DT: "" });
+                return rejectCreate(400, { EM: "Minimum budget cannot be greater than maximum budget.", EC: 400, DT: "" });
             }
         }
 
@@ -51,11 +61,11 @@ const handleCreateJob = async (req, res) => {
         const parsedAddressOption = Number(address_option);
         
         if (parsedAddressOption === 1 && (!detail_address || !province_code || !ward_code)) {
-            return res.status(400).json({ EM: "Missing detail_address, province_code or ward_code for option 1.", EC: 400, DT: "" });
+            return rejectCreate(400, { EM: "Missing detail_address, province_code or ward_code for option 1.", EC: 400, DT: "" });
         } else if (parsedAddressOption === 2) {
             // No extra fields needed, will fetch from User profile
         } else if (![1, 2, 3].includes(parsedAddressOption)) {
-            return res.status(400).json({ EM: "Invalid address_option. Must be 1, 2, or 3.", EC: 400, DT: "" });
+            return rejectCreate(400, { EM: "Invalid address_option. Must be 1, 2, or 3.", EC: 400, DT: "" });
         }
 
         const locationValidation = validateJobLocationInput({
@@ -66,7 +76,7 @@ const handleCreateJob = async (req, res) => {
             locationConfirmed: location_confirmed
         });
         if (!locationValidation.valid) {
-            return res.status(400).json({ EM: locationValidation.error, EC: 400, DT: "" });
+            return rejectCreate(400, { EM: locationValidation.error, EC: 400, DT: "" });
         }
 
         const images = req.files ? req.files.map(file => file.path) : [];
@@ -85,17 +95,31 @@ const handleCreateJob = async (req, res) => {
             estimated_budget_min,
             estimated_budget_max,
             scheduled_at,
-            images
+            images,
+            ai_assistant_session_id
 
         });
 
         const responseStatus = result.EC === 0 ? 200 : result.EC;
+        if (result.EC !== 0 && req.files?.length) {
+            await cleanupUploadedJobImages(req.files, {
+                operation: 'create_job_rejected',
+                correlation_id: req.correlationId
+            });
+        }
         return res.status(responseStatus).json({
             EM: result.EM,
             EC: result.EC,
+            code: result.code,
             DT: result.DT
         });
     } catch (error) {
+        if (req.files?.length) {
+            await cleanupUploadedJobImages(req.files, {
+                operation: 'create_job_controller_error',
+                correlation_id: req.correlationId
+            });
+        }
         console.log(">>> Error in handleCreateJob controller: ", error);
         return res.status(500).json({ 
           EM: "Internal server error.", 
@@ -108,10 +132,11 @@ const handleCreateJob = async (req, res) => {
 const handleGetCustomerJobs = async (req, res) => {
     try {
         const userId = req.user.id;
-        const result = await getCustomerJobsService(userId);
-        return res.status(result.EC === 0 ? 200 : 500).json({ 
+        const result = await getCustomerJobsService(userId, req.query);
+        return res.status(result.EC === 0 ? 200 : (result.EC === 400 ? 400 : 500)).json({
               EM: result.EM,
               EC: result.EC,
+              code: result.code,
               DT: result.DT
         });
     } catch (error) {

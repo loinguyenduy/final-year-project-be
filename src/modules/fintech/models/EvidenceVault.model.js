@@ -43,6 +43,10 @@ const EvidenceVault = db.define('Evidence_Vault', {
         {
             name: 'evidence_vaults_job_cycle_stage_uploader',
             fields: ['job_id', 'acceptance_cycle', 'stage', 'uploader_id']
+        },
+        {
+            name: 'evidence_vaults_job_cycle_uploaded_id',
+            fields: ['job_id', 'acceptance_cycle', 'uploaded_at', 'id']
         }
     ]
 });

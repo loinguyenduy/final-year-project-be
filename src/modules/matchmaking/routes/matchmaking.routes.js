@@ -89,6 +89,7 @@ import {
     handleListWarrantyCompletionRequests,
     handleRejectWarrantyCompletionRequest
 } from '../controllers/Warranty.controller.js';
+import { createReview } from '../../dispute/controllers/Review.controller.js';
 
 const router = express.Router();
 
@@ -119,6 +120,7 @@ router.post(
 
 // HANDYMAN JOB
 router.get('/jobs/available', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetAvailableJobs);
+router.post('/jobs/:jobId/reviews', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN']), createReview);
 
 // BIDDING — Handyman actions
 router.get('/handyman/my-bids', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetMyBids);

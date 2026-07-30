@@ -6,6 +6,11 @@ import HandymanService from '../models/HandymanService.model.js';
 import User from '../../identity/models/User.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
 import Review from '../../dispute/models/Review.model.js';
+import {
+    canonicalReviewWhere,
+    getRatingSummaries,
+    getRatingSummary
+} from '../../dispute/services/Rating.service.js';
 
 const MAX_COMPARE_BIDS = 3;
 const MAX_CATEGORY_JOBS_FOR_FULL_SCORE = 20;
@@ -45,7 +50,7 @@ const getKycScore = ({ kycStatus, handymanLevel }) => {
 const calculateMatchScore = ({
     proposedPrice,
     lowestPrice,
-    bayesianScore,
+    averageRating,
     completedSameServiceJobs,
     totalJobsCompleted,
     kycStatus,
@@ -58,7 +63,7 @@ const calculateMatchScore = ({
 }) => {
     const price = Number(proposedPrice);
     const minPrice = Number(lowestPrice);
-    const score = Number(bayesianScore || 0);
+    const score = Number(averageRating || 0);
     const sameServiceJobs = Number(completedSameServiceJobs || 0);
     const totalJobs = Number(totalJobsCompleted || 0);
     const duration = Number(estimatedDurationHours);
@@ -101,25 +106,17 @@ const calculateMatchScore = ({
     };
 };
 
-const countCompletedSameServiceJobs = async (handymanId, serviceId) => {
-    return Job.count({
-        where: {
-            selected_handyman_id: handymanId,
-            service_id: serviceId,
-            current_status: 'CLOSED'
-        }
-    });
-};
-
-const mapBidForMatchResponse = async (bid, benchmarks, serviceId) => {
+const mapBidForMatchResponse = async (bid, benchmarks) => {
     const plainBid = bid.toJSON ? bid.toJSON() : bid;
     const handyman = plainBid.User || {};
     const profile = handyman.Handyman_Profile || {};
-    const completedSameServiceJobs = await countCompletedSameServiceJobs(plainBid.handyman_id, serviceId);
+    const completedSameServiceJobs = benchmarks.completedJobs.get(plainBid.handyman_id) || 0;
+    const ratingSummary = benchmarks.ratings.get(plainBid.handyman_id);
+    const rankingRating = ratingSummary?.average_rating || null;
     const score = calculateMatchScore({
         proposedPrice: plainBid.proposed_price,
         lowestPrice: benchmarks.lowestPrice,
-        bayesianScore: profile.bayesian_score,
+        averageRating: rankingRating,
         completedSameServiceJobs,
         totalJobsCompleted: profile.total_jobs_completed,
         kycStatus: handyman.kyc_status,
@@ -145,7 +142,7 @@ const mapBidForMatchResponse = async (bid, benchmarks, serviceId) => {
             role: handyman.role,
             avatar_url: handyman.avatar_url,
             kyc_status: handyman.kyc_status,
-            bayesian_score: profile.bayesian_score ? Number(profile.bayesian_score) : 0,
+            rating_summary: ratingSummary,
             total_jobs_completed: profile.total_jobs_completed || 0,
             handyman_level: profile.handyman_level || null
         },
@@ -168,15 +165,31 @@ const buildMatchResultsForBids = async (bids, serviceId) => {
     const durationList = bids
         .map((bid) => Number(bid.estimated_duration_hours))
         .filter((duration) => duration > 0);
+    const handymanIds = [...new Set(bids.map((bid) => bid.handyman_id))];
+    const [ratings, completedRows] = await Promise.all([
+        getRatingSummaries(handymanIds.map((id) => ({ id, role: 'HANDYMAN' }))),
+        Job.findAll({
+            where: { selected_handyman_id: { [Op.in]: handymanIds }, service_id: serviceId, current_status: 'CLOSED' },
+            attributes: ['selected_handyman_id'],
+            raw: true
+        })
+    ]);
+    const completedJobs = new Map(handymanIds.map((id) => [id, 0]));
+    completedRows.forEach((entry) => completedJobs.set(
+        entry.selected_handyman_id,
+        (completedJobs.get(entry.selected_handyman_id) || 0) + 1
+    ));
     const benchmarks = {
         now,
         lowestPrice: Math.min(...bids.map((bid) => Number(bid.proposed_price))),
         shortestEtaMinutes: etaMinutesList.length > 0 ? Math.min(...etaMinutesList) : null,
-        shortestDurationHours: durationList.length > 0 ? Math.min(...durationList) : null
+        shortestDurationHours: durationList.length > 0 ? Math.min(...durationList) : null,
+        ratings,
+        completedJobs
     };
 
     const results = await Promise.all(
-        bids.map((bid) => mapBidForMatchResponse(bid, benchmarks, serviceId))
+        bids.map((bid) => mapBidForMatchResponse(bid, benchmarks))
     );
 
     results.sort((a, b) => b.match_score - a.match_score);
@@ -219,7 +232,7 @@ const getPublicHandymanProfileService = async (customerId, jobId, handymanId) =>
             include: [
                 {
                     model: HandymanProfile,
-                    attributes: ['bayesian_score', 'total_jobs_completed', 'handyman_level', 'bio'],
+                    attributes: ['total_jobs_completed', 'handyman_level', 'bio'],
                     required: false
                 },
                 {
@@ -238,7 +251,7 @@ const getPublicHandymanProfileService = async (customerId, jobId, handymanId) =>
         }
 
         const reviews = await Review.findAll({
-            where: { reviewee_id: handymanId },
+            where: canonicalReviewWhere({ reviewee_id: handymanId }),
             attributes: ['id', 'rating_stars', 'comment', 'is_job_successful', 'createdAt'],
             include: [
                 {
@@ -252,7 +265,8 @@ const getPublicHandymanProfileService = async (customerId, jobId, handymanId) =>
                     attributes: ['id', 'full_name', 'avatar_url']
                 }
             ],
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC'], ['id', 'DESC']],
+            limit: 50
         });
 
         const sortedReviews = reviews
@@ -281,6 +295,7 @@ const getPublicHandymanProfileService = async (customerId, jobId, handymanId) =>
             ? roundToTwoDecimals((successfulReviewsCount / sortedReviews.length) * 100)
             : 0;
 
+        const ratingSummary = await getRatingSummary(handymanId, 'HANDYMAN');
         const plainHandyman = handyman.toJSON();
         const profile = plainHandyman.Handyman_Profile || {};
 
@@ -293,7 +308,7 @@ const getPublicHandymanProfileService = async (customerId, jobId, handymanId) =>
                 role: plainHandyman.role,
                 avatar_url: plainHandyman.avatar_url,
                 kyc_status: plainHandyman.kyc_status,
-                bayesian_score: profile.bayesian_score ? Number(profile.bayesian_score) : 0,
+                rating_summary: ratingSummary,
                 total_jobs_completed: profile.total_jobs_completed || 0,
                 success_rate: successRate,
                 successful_reviews_count: successfulReviewsCount,
@@ -357,7 +372,7 @@ const compareBidsService = async (customerId, { job_id, bid_ids }) => {
                     include: [
                         {
                             model: HandymanProfile,
-                            attributes: ['bayesian_score', 'total_jobs_completed', 'handyman_level'],
+                            attributes: ['total_jobs_completed', 'handyman_level'],
                             required: false
                         }
                     ]

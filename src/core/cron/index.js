@@ -1,21 +1,30 @@
-import cron from "node-cron";
-import { cleanupUnverifiedUsers } from "../../modules/identity/jobs/CleanupUnverified.job.js";
-import { cleanupExpiredTransactions } from "../../modules/fintech/jobs/CleanupPayment.job.js"; 
-import { releaseExpiredWarranties } from "../../modules/fintech/jobs/ReleaseWarranty.job.js";
-import { getQuoteConfig } from "../../modules/matchmaking/utils/quote.util.js";
+import cron from 'node-cron';
+import { cleanupUnverifiedUsers } from '../../modules/identity/jobs/CleanupUnverified.job.js';
+import { cleanupExpiredTransactions } from '../../modules/fintech/jobs/CleanupPayment.job.js';
+import { releaseExpiredWarranties } from '../../modules/fintech/jobs/ReleaseWarranty.job.js';
+import { getQuoteConfig } from '../../modules/matchmaking/utils/quote.util.js';
+
+let scheduledTasks = [];
+
+const scheduleOptions = () => {
+  const timezone = String(process.env.CRON_TIMEZONE || '').trim();
+  return timezone ? { noOverlap: true, timezone } : { noOverlap: true };
+};
 
 const initCronJobs = () => {
-  console.log("[CronJob] Initializing cron jobs...");
+  if (scheduledTasks.length > 0) {
+    throw new Error('Cron jobs have already been registered in this process.');
+  }
+  console.log('[CronJob] Initializing cron jobs...');
+  const options = scheduleOptions();
 
-  // Chạy mỗi 1 phút -> "* * * * *"
-  cron.schedule("0 2 * * *", async () => {
+  scheduledTasks.push(cron.schedule('0 2 * * *', async () => {
     await cleanupUnverifiedUsers();
-  });
+  }, options));
 
-  // Dọn dẹp giao dịch treo mỗi 15 phút một lần
-  cron.schedule("* * * * *", async () => {
+  scheduledTasks.push(cron.schedule('* * * * *', async () => {
     await cleanupExpiredTransactions();
-  });
+  }, options));
 
   const warrantyCronEnabled = String(
     process.env.JOB_WARRANTY_CRON_ENABLED
@@ -36,18 +45,26 @@ const initCronJobs = () => {
       : null;
     console.log('[CronJob] Warranty release scheduler enabled.', {
       schedule: warrantySchedule,
+      timezone: process.env.CRON_TIMEZONE ? 'configured' : 'system default',
       standard_warranty_days: getQuoteConfig().standardWarrantyDays,
-      development_override_minutes: testDelay
+      development_override_minutes: testDelay,
     });
-    cron.schedule(warrantySchedule, async () => {
+    scheduledTasks.push(cron.schedule(warrantySchedule, async () => {
       try {
         const summary = await releaseExpiredWarranties();
         if (summary.candidates > 0) console.log('[CronJob] Warranty release run completed.', summary);
       } catch (error) {
-        console.error('[CronJob] Warranty release run failed.', error);
+        console.error('[CronJob] Warranty release run failed:', error?.message || 'unknown error');
       }
-    });
+    }, options));
   }
+  return [...scheduledTasks];
 };
 
-export { initCronJobs };
+const stopCronJobs = async () => {
+  const tasks = scheduledTasks;
+  scheduledTasks = [];
+  await Promise.all(tasks.map((task) => task.stop()));
+};
+
+export { initCronJobs, stopCronJobs };

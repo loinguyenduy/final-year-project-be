@@ -1122,7 +1122,26 @@ const initDatabase = async () => {
         console.log('Connection to PostgreSQL has been established successfully.');
         const shouldAlter = String(process.env.DB_SYNC_ALTER || '').toLowerCase() === 'true';
         if (shouldAlter) {
-            console.warn('DB_SYNC_ALTER=true: synchronizing model changes with alter mode. Disable it after this run.');
+            const [tableCountRows] = await db.query(`
+                SELECT COUNT(*)::integer AS table_count
+                FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_type = 'BASE TABLE'
+            `);
+            const tableCount = Number(tableCountRows[0]?.table_count || 0);
+            const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+            const nonEmptyOverride = process.env.DB_SYNC_ALTER_ALLOW_NONEMPTY
+                === 'I_UNDERSTAND_ALTER_MAY_MODIFY_EXISTING_SCHEMA';
+            if (isProduction && tableCount > 0 && !nonEmptyOverride) {
+                throw new Error(
+                    'DB_SYNC_ALTER=true was refused because the production database is not empty. '
+                    + 'Disable alter mode or supply the documented one-time non-empty override.'
+                );
+            }
+            console.warn(
+                'WARNING: DB_SYNC_ALTER=true. Sequelize alter synchronization may modify the schema. '
+                + 'Use this only for the first controlled bootstrap, then set DB_SYNC_ALTER=false.'
+            );
             try {
                 await db.sync({ alter: true });
             } catch (error) {
@@ -1145,7 +1164,7 @@ const initDatabase = async () => {
         await verifyParticipantExperienceSchema();
         await verifyAiJobAssistantSchema();
     } catch (error) {
-        console.error('Unable to connect to the database:', error);
+        console.error('Database initialization failed:', error?.message || 'unknown error');
         throw error;
     }
 };

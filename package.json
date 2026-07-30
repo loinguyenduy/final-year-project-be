@@ -15,6 +15,12 @@
     "participant:phase5:test:manual": "node scripts/participant/manualParticipantExperienceReviewsTest.js",
     "ai:gemini:smoke": "node scripts/ai/geminiSmoke.js",
     "ai:assistant:test:manual": "node scripts/ai/manualAiJobAssistantTest.js",
+    "config:check": "node scripts/deployment/checkConfig.js",
+    "bootstrap:admin": "node scripts/deployment/bootstrapAdmin.js",
+    "bootstrap:services": "node scripts/deployment/bootstrapServices.js",
+    "verify:system-wallets": "node scripts/deployment/verifySystemWallets.js",
+    "test:email-transport": "node test/emailTransport.test.js",
+    "test:oauth-link-state": "node test/oauthLinkState.test.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

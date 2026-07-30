@@ -17,6 +17,10 @@ import {
   getUserRoom,
   registerRealtimeIo
 } from '../../../core/realtime/realtime.gateway.js';
+import {
+  getFrontendOrigin,
+  parseOrigin,
+} from '../../../core/config/publicUrls.config.js';
 
 const emitProtocolError = (socket, envelope) => socket.emit(CHAT_EVENTS.ERROR, envelope);
 
@@ -188,8 +192,13 @@ const registerChatHandlers = (socket) => {
 const parseCorsOrigins = () => {
   const raw = process.env.SOCKET_CORS_ORIGIN
     || process.env.FRONTEND_URL
-    || 'http://localhost:5173';
+    || getFrontendOrigin({ required: false });
+  if (!raw) return false;
   const origins = raw.split(',').map((value) => value.trim()).filter(Boolean);
+  if (origins.includes('*')) {
+    throw new Error('SOCKET_CORS_ORIGIN cannot be * when credentials are enabled.');
+  }
+  origins.forEach((origin) => parseOrigin(origin, 'SOCKET_CORS_ORIGIN'));
   return origins.length === 1 ? origins[0] : origins;
 };
 

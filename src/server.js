@@ -1,24 +1,28 @@
-import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-import cookieParser from "cookie-parser";
-import { createServer } from "http";
-import { initDatabase } from "./core/database/setup.js";
-import { initCronJobs } from "./core/cron/index.js";
-import v1Routes from "./core/routes/v1.routes.js";
-import passport from "./core/middlewares/passport.middleware.js";
-import { initializeSystemWallets } from "./modules/fintech/services/Wallet.service.js";
-import { initializeChatSocket } from "./modules/chat/sockets/chat.socket.js";
-import seedAdmin from './core/database/seedAdmin.js';
+import express from 'express';
+import dotenv from 'dotenv';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import { createServer } from 'node:http';
+import { initDatabase, db } from './core/database/setup.js';
+import { initCronJobs, stopCronJobs } from './core/cron/index.js';
+import v1Routes from './core/routes/v1.routes.js';
+import passport from './core/middlewares/passport.middleware.js';
+import { initializeSystemWallets } from './modules/fintech/services/Wallet.service.js';
+import { initializeChatSocket } from './modules/chat/sockets/chat.socket.js';
 import { correlationIdMiddleware } from './core/middlewares/correlationId.middleware.js';
 import { getRefreshCookieOptions } from './modules/identity/utils/authCookie.util.js';
-// import seedServices from "./core/database/seedServices.js";
+import { getFrontendOrigin } from './core/config/publicUrls.config.js';
+import { assertProductionBootstrapEnvironment } from './core/config/environmentValidation.js';
 
 dotenv.config();
+assertProductionBootstrapEnvironment();
 getRefreshCookieOptions();
 
 const app = express();
 const httpServer = createServer(app);
+let io = null;
+let ready = false;
+let shuttingDown = false;
 
 const trustProxy = String(process.env.TRUST_PROXY || '').trim();
 if (trustProxy && !['false', '0'].includes(trustProxy.toLowerCase())) {
@@ -28,42 +32,88 @@ if (trustProxy && !['false', '0'].includes(trustProxy.toLowerCase())) {
   app.set('trust proxy', parsedTrustProxy);
 }
 
-// Middlewares
 app.use(express.json());
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Correlation-ID"],
-    exposedHeaders: ["X-Correlation-ID"],
-    credentials: true, // Allow cookies to be sent in cross-origin requests
+    origin: getFrontendOrigin({ required: false }) || false,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID'],
+    exposedHeaders: ['X-Correlation-ID'],
+    credentials: true,
   }),
 );
 app.use(cookieParser());
 app.use(passport.initialize());
 app.use(correlationIdMiddleware);
+app.use('/api/v1', v1Routes);
 
-// Import routes
-app.use("/api/v1", v1Routes);
+app.get('/health', (_req, res) => {
+  if (!ready) return res.status(503).json({ status: 'starting' });
+  return res.status(200).json({ status: 'ok' });
+});
+app.get('/', (_req, res) => {
+  res.send('Trusted Handyman API is running');
+});
 
 const PORT = process.env.PORT || 5000;
 
-app.get("/", (req, res) => {
-  res.send("Trusted Handyman API is running");
+const closeHttpServer = () => new Promise((resolve) => {
+  if (!httpServer.listening) return resolve();
+  return httpServer.close(() => resolve());
 });
 
-initDatabase().then(() => {
-  return seedAdmin();
-}).then(() => {
-  return initializeSystemWallets();
-}).then(() => {
-  initCronJobs();
-  initializeChatSocket(httpServer);
-  httpServer.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+const closeSocketServer = () => new Promise((resolve) => {
+  if (!io) return resolve();
+  return io.close(() => resolve());
+});
+
+const shutdown = async (signal, exitCode = 0) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  ready = false;
+  console.log(`Received ${signal}; shutting down.`);
+
+  const timeout = new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(new Error('Shutdown timed out.')), 10_000);
+    timer.unref();
   });
-  // Seed the mock services
-  // seedServices();
-}).catch(err => {
-  console.error("Failed to initialize database:", err);
+  const cleanup = (async () => {
+    await stopCronJobs();
+    await Promise.all([closeHttpServer(), closeSocketServer()]);
+    await db.close();
+  })();
+
+  try {
+    await Promise.race([cleanup, timeout]);
+    console.log('Shutdown completed.');
+    process.exit(exitCode);
+  } catch (error) {
+    console.error('Shutdown failed:', error?.message || 'unknown error');
+    process.exit(1);
+  }
+};
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
+
+const start = async () => {
+  await initDatabase();
+  const walletSummary = await initializeSystemWallets();
+  console.log('System Wallet initialization completed.', walletSummary);
+  initCronJobs();
+  io = initializeChatSocket(httpServer);
+  await new Promise((resolve, reject) => {
+    httpServer.once('error', reject);
+    httpServer.listen(PORT, () => {
+      httpServer.off('error', reject);
+      ready = true;
+      console.log(`Server ready on port ${PORT}.`);
+      resolve();
+    });
+  });
+};
+
+start().catch(async (error) => {
+  console.error('Backend startup failed:', error?.message || 'unknown error');
+  await shutdown('startup failure', 1);
 });

@@ -103,7 +103,20 @@ const handleRegisterUser = async (rawUserData) => {
 
     // save all data to database and commit transaction
     await trans.commit();
-    sendVerificationEmail(newUser.email, newUser.full_name, randomToken);
+    try {
+      await sendVerificationEmail(newUser.email, newUser.full_name, randomToken);
+    } catch (emailError) {
+      console.error('Registration verification email delivery failed.', {
+        user_id: newUser.id,
+        code: emailError?.code || 'EMAIL_PROVIDER_FAILED',
+      });
+      return {
+        EM: "Your account was created, but the verification email could not be delivered. Please use resend verification.",
+        EC: 503,
+        code: "VERIFICATION_EMAIL_DELIVERY_FAILED",
+        DT: "",
+      };
+    }
 
     return {
       EM: "User account is created successfully.",
@@ -111,7 +124,7 @@ const handleRegisterUser = async (rawUserData) => {
       DT: "",
     };
   } catch (error) {
-    await trans.rollback();
+    if (!trans.finished) await trans.rollback();
     console.log("Something wrongs in handleRegisterUser: ", error);
     return {
       EM: "Something wrongs in service...",
@@ -583,14 +596,26 @@ const handleResendVerifyEmail = async (email) => {
 
     await t.commit();
 
-    sendVerificationEmail(user.email, user.full_name, randomToken);
+    try {
+      await sendVerificationEmail(user.email, user.full_name, randomToken);
+    } catch (emailError) {
+      console.error('Verification email resend delivery failed.', {
+        user_id: user.id,
+        code: emailError?.code || 'EMAIL_PROVIDER_FAILED',
+      });
+      return {
+        EM: "The verification email could not be delivered. Please try again.",
+        EC: 503,
+        code: "VERIFICATION_EMAIL_DELIVERY_FAILED",
+      };
+    }
 
     return { 
       EM: "A new verification email has been sent.", 
       EC: 0 
     };
   } catch (error) {
-    await t.rollback();
+    if (!t.finished) await t.rollback();
     console.log("Error in handleResendVerifyEmail: ", error);
     return { 
       EM: "Server error.", 

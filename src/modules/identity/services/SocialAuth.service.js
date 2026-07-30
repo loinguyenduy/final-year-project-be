@@ -6,6 +6,7 @@ import { createAccessToken, createRefreshToken } from "../../../core/utils/jwt.u
 import { initializeUserWallets } from '../../fintech/services/Wallet.service.js';
 import { getCanonicalProfile } from './ParticipantRead.service.js';
 import { getRefreshCookieOptions } from '../utils/authCookie.util.js';
+import { isOAuthLinkAuthVersionCurrent } from './OAuthLinkState.service.js';
 
 const upsertGoogleUser = async (googleProfile) => {
   const t = await db.transaction();
@@ -231,11 +232,14 @@ const upsertFacebookUser = async (facebookProfile) => {
 // Link an existing account to a Google or Facebook provider.
 // Called after the OAuth flow when the user is already logged in.
 
-const linkGoogleProvider = async (userId, googleProfile) => {
+const linkGoogleProvider = async (userId, googleProfile, { expectedAuthVersion } = {}) => {
     try {
-        const user = await User.findByPk(userId, { attributes: ['id', 'role', 'is_active'] });
+        const user = await User.findByPk(userId, { attributes: ['id', 'role', 'is_active', 'auth_version'] });
         if (!user || !user.is_active) return { EM: 'User account is unavailable.', EC: 403, code: 'ACCOUNT_INACTIVE', DT: '' };
         if (user.role === 'ADMIN') return { EM: 'Administrators cannot link social login providers.', EC: 403, code: 'ADMIN_PORTAL_REQUIRED', DT: '' };
+        if (!isOAuthLinkAuthVersionCurrent(expectedAuthVersion, Number(user.auth_version || 0))) {
+            return { EM: 'This session is no longer valid.', EC: 401, code: 'SESSION_REVOKED', DT: '' };
+        }
         const providerId = googleProfile.id;
 
         const alreadyLinkedToMe = await AuthProvider.findOne({
@@ -261,11 +265,14 @@ const linkGoogleProvider = async (userId, googleProfile) => {
     }
 };
 
-const linkFacebookProvider = async (userId, facebookProfile) => {
+const linkFacebookProvider = async (userId, facebookProfile, { expectedAuthVersion } = {}) => {
     try {
-        const user = await User.findByPk(userId, { attributes: ['id', 'role', 'is_active'] });
+        const user = await User.findByPk(userId, { attributes: ['id', 'role', 'is_active', 'auth_version'] });
         if (!user || !user.is_active) return { EM: 'User account is unavailable.', EC: 403, code: 'ACCOUNT_INACTIVE', DT: '' };
         if (user.role === 'ADMIN') return { EM: 'Administrators cannot link social login providers.', EC: 403, code: 'ADMIN_PORTAL_REQUIRED', DT: '' };
+        if (!isOAuthLinkAuthVersionCurrent(expectedAuthVersion, Number(user.auth_version || 0))) {
+            return { EM: 'This session is no longer valid.', EC: 401, code: 'SESSION_REVOKED', DT: '' };
+        }
         if (!facebookProfile.emails || facebookProfile.emails.length === 0) {
             return { EM: "Facebook account must have an email to be linked.", EC: 400, DT: "" };
         }

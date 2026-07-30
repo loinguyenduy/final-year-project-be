@@ -1,5 +1,8 @@
 import Transaction from "../models/Transaction.model.js";
-import payOSInstance from "../../../core/config/payos.config.js";
+import {
+  PayOSConfigurationError,
+  getPayOSInstance,
+} from "../../../core/config/payos.config.js";
 import Wallet from "../models/Wallet.model.js";
 import User from '../../identity/models/User.model.js';
 import HandymanProfile from '../../identity/models/HandymanProfile.model.js';
@@ -21,6 +24,7 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
   let createdTransaction = null;
 
   try {
+    const payOSInstance = getPayOSInstance();
     if (!amount || amount <= 0) {
       return {
         EM: "Invalid amount.",
@@ -140,7 +144,15 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
       DT: paymentLinkResponse.checkoutUrl,
     };
   } catch (error) {
-    console.log("Error in createTopUpLinkService: ", error);
+    if (error instanceof PayOSConfigurationError) {
+      return {
+        EM: "PayOS is temporarily unavailable.",
+        EC: 503,
+        code: error.code,
+        DT: "",
+      };
+    }
+    console.error("PayOS top-up link creation failed:", error?.message || "unknown error");
     if (createdTransaction?.status === 'PENDING') {
       try {
         await createdTransaction.update({ status: 'FAILED' });
@@ -158,6 +170,7 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
 
 const handlePayOSWebhookService = async (webhookData) => {
   try {
+    const payOSInstance = getPayOSInstance();
     const verifiedData = await payOSInstance.webhooks.verify(webhookData);
     const { orderCode, amount, code } = verifiedData;
 
@@ -174,7 +187,10 @@ const handlePayOSWebhookService = async (webhookData) => {
       gatewayCode: orderCode
     });
   } catch (error) {
-    console.error(">>> Webhook processing failed:", error);
+    if (error instanceof PayOSConfigurationError) {
+      return { EM: "PayOS is temporarily unavailable.", EC: 503, code: error.code, DT: "" };
+    }
+    console.error("PayOS webhook processing failed:", error?.message || "unknown error");
     return {
       EM: "Invalid webhook data.",
       EC: 400,
@@ -193,6 +209,7 @@ const getPayOSOrderCode = (queryParams) => {
 
 const handlePayOSReturnService = async (queryParams) => {
   try {
+    const payOSInstance = getPayOSInstance();
     const orderCode = getPayOSOrderCode(queryParams);
     if (!orderCode) {
       return { EM: "Missing or invalid PayOS orderCode.", EC: 400, DT: "" };
@@ -262,13 +279,17 @@ const handlePayOSReturnService = async (queryParams) => {
       }
     };
   } catch (error) {
-    console.error(">>> Error in handlePayOSReturnService:", error);
+    if (error instanceof PayOSConfigurationError) {
+      return { EM: "PayOS is temporarily unavailable.", EC: 503, code: error.code, DT: "" };
+    }
+    console.error("PayOS return processing failed:", error?.message || "unknown error");
     return { EM: "Unable to process PayOS return.", EC: 500, DT: "" };
   }
 };
 
 const handlePayOSCancelService = async (queryParams) => {
   try {
+    const payOSInstance = getPayOSInstance();
     const orderCode = getPayOSOrderCode(queryParams);
     if (!orderCode) {
       return { EM: "Missing or invalid PayOS orderCode.", EC: 400, DT: "" };
@@ -338,7 +359,10 @@ const handlePayOSCancelService = async (queryParams) => {
       }
     };
   } catch (error) {
-    console.error(">>> Error in handlePayOSCancelService:", error);
+    if (error instanceof PayOSConfigurationError) {
+      return { EM: "PayOS is temporarily unavailable.", EC: 503, code: error.code, DT: "" };
+    }
+    console.error("PayOS cancellation processing failed:", error?.message || "unknown error");
     return { EM: "Unable to process PayOS cancellation.", EC: 500, DT: "" };
   }
 };

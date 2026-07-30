@@ -10,6 +10,7 @@ const getTopUpHttpStatus = (errorCode) => {
   if (errorCode === 0) return 200;
   if ([1, 400].includes(errorCode)) return 400;
   if ([403, 404].includes(errorCode)) return errorCode;
+  if (errorCode === 503) return 503;
   return 500;
 };
 
@@ -52,7 +53,13 @@ const handlePayOSWebhook = async (req, res) => {
     const webhookData = req.body;
     const result = await handlePayOSWebhookService(webhookData);
 
-    if (result.EC === 0) {
+    if (result.EC === 503) {
+      return res.status(503).json({
+        success: false,
+        message: result.EM,
+        code: result.code,
+      });
+    } else if (result.EC === 0) {
       return res.status(200).json({ 
         success: true, 
         message: result.EM 
@@ -74,7 +81,7 @@ const handlePayOSWebhook = async (req, res) => {
 
 const getCallbackHttpStatus = (errorCode) => {
   if (errorCode === 0) return 200;
-  if ([400, 404, 409].includes(errorCode)) return errorCode;
+  if ([400, 404, 409, 503].includes(errorCode)) return errorCode;
   return 500;
 };
 

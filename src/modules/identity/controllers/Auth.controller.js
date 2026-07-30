@@ -47,6 +47,7 @@ const registerNewUser = async (req, res) => {
     return res.status(data.EC === 0 ? 200 : data.EC).json({
       EM: data.EM,
       EC: data.EC,
+      code: data.code,
       DT: data.DT,
     });
   } catch (error) {
@@ -236,9 +237,10 @@ const resendVerifyEmail = async (req, res) => {
 
     let data = await handleResendVerifyEmail(email);
 
-    return res.status(data.EC === 0 ? 200 : 400).json({
+    return res.status(data.EC === 0 ? 200 : data.EC).json({
       EM: data.EM,
       EC: data.EC,
+      code: data.code,
     });
   } catch (error) {
     return res.status(500).json({ 

@@ -1,36 +1,66 @@
 import express from 'express';
-import passport from '../../../core/middlewares/passport.middleware.js';
+import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
 import {
-    handleGoogleCallback,
-    handleGoogleLinkInitiate,
-    handleFacebookCallback,
-    handleFacebookLinkInitiate
+  authenticateOAuthCallback,
+  beginOAuth,
+  handleFacebookCallback,
+  handleFacebookLinkInitiate,
+  handleFacebookLinkState,
+  handleGoogleCallback,
+  handleGoogleLinkInitiate,
+  handleGoogleLinkState,
+  requireOAuthProvider,
 } from '../controllers/SocialAuth.controller.js';
 
 const router = express.Router();
+const participantOnly = checkUserRole(['CUSTOMER', 'HANDYMAN']);
 
-// ─── GOOGLE ───────────────────────────────────────────────────────────────────
+router.get(
+  '/google',
+  requireOAuthProvider('google'),
+  beginOAuth('google'),
+);
+router.get(
+  '/google/callback',
+  requireOAuthProvider('google', { callback: true }),
+  authenticateOAuthCallback('google'),
+  handleGoogleCallback,
+);
+router.post(
+  '/google/link-state',
+  checkUserJWT,
+  participantOnly,
+  requireOAuthProvider('google'),
+  handleGoogleLinkState,
+);
+router.get(
+  '/google/link',
+  requireOAuthProvider('google'),
+  handleGoogleLinkInitiate,
+);
 
-// Login / register
-router.get('/google', passport.authenticate('google',
-    { scope: ['profile', 'email'], session: false }));
-
-router.get('/google/callback', passport.authenticate('google',
-    { session: false, failureRedirect: '/login' }), handleGoogleCallback);
-
-// Link existing account to Google (browser redirect with ?token=<access_token>)
-router.get('/google/link', handleGoogleLinkInitiate);
-
-// ─── FACEBOOK ─────────────────────────────────────────────────────────────────
-
-// Login / register
-router.get('/facebook', passport.authenticate('facebook',
-    { scope: ['public_profile', 'email'], session: false }));
-
-router.get('/facebook/callback', passport.authenticate('facebook',
-    { session: false, failureRedirect: '/login' }), handleFacebookCallback);
-
-// Link existing account to Facebook (browser redirect with ?token=<access_token>)
-router.get('/facebook/link', handleFacebookLinkInitiate);
+router.get(
+  '/facebook',
+  requireOAuthProvider('facebook'),
+  beginOAuth('facebook'),
+);
+router.get(
+  '/facebook/callback',
+  requireOAuthProvider('facebook', { callback: true }),
+  authenticateOAuthCallback('facebook'),
+  handleFacebookCallback,
+);
+router.post(
+  '/facebook/link-state',
+  checkUserJWT,
+  participantOnly,
+  requireOAuthProvider('facebook'),
+  handleFacebookLinkState,
+);
+router.get(
+  '/facebook/link',
+  requireOAuthProvider('facebook'),
+  handleFacebookLinkInitiate,
+);
 
 export default router;

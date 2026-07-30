@@ -4,9 +4,10 @@ const SYSTEM_WALLET_TYPES = ['SYSTEM_PROFIT', 'SYSTEM_ESCROW'];
 
 const initializeSystemWallets = async (transaction = null) => {
   const options = transaction ? { transaction } : {};
+  const summary = { created: 0, existing: 0 };
 
   for (const walletType of SYSTEM_WALLET_TYPES) {
-    await Wallet.findOrCreate({
+    const [, created] = await Wallet.findOrCreate({
       where: { wallet_type: walletType },
       defaults: {
         user_id: null,
@@ -15,7 +16,9 @@ const initializeSystemWallets = async (transaction = null) => {
       },
       ...options
     });
+    summary[created ? 'created' : 'existing'] += 1;
   }
+  return summary;
 };
 
 const initializeUserWallets = async (userId, role, transaction = null) => {

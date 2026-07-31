@@ -5,6 +5,10 @@ import { transitionJobToAccepted } from '../../matchmaking/services/AcceptedTran
 import Transaction from '../models/Transaction.model.js';
 import Wallet from '../models/Wallet.model.js';
 import {
+  buildOfficialHandymanPartnerRequiredError,
+  getOfficialHandymanPartnerEligibility
+} from '../../identity/services/HandymanPartnerEligibility.service.js';
+import {
   JOB_LIFECYCLE_EVENTS,
   emitJobLifecycleEvent
 } from '../../matchmaking/sockets/JobLifecycle.gateway.js';
@@ -60,6 +64,14 @@ const validateJobAndBid = async (customerId, jobId, bidId, options = {}) => {
 
   if (!bid) {
     return { error: { EM: "Bid not found or is no longer available.", EC: 404, DT: "" } };
+  }
+
+  const partnerEligibility = await getOfficialHandymanPartnerEligibility(
+    bid.handyman_id,
+    options
+  );
+  if (!partnerEligibility.eligible) {
+    return { error: buildOfficialHandymanPartnerRequiredError(409) };
   }
 
   return { job, bid };

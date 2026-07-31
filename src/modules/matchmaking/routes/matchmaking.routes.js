@@ -22,6 +22,7 @@ import {
     handleGetPublicHandymanProfile
 } from '../controllers/CustomerHandymanSelection.controller.js';
 import { checkUserJWT, checkUserRole } from '../../../core/middlewares/auth.middleware.js';
+import { requireOfficialHandymanPartner } from '../../identity/middlewares/officialHandyman.middleware.js';
 import { uploadJobImagesMiddleware } from '../../../core/config/cloudinary.config.js';
 import { handleGetAcceptedDetails, handleStartMoving } from '../controllers/AcceptedJob.controller.js';
 import {
@@ -119,13 +120,13 @@ router.post(
 );
 
 // HANDYMAN JOB
-router.get('/jobs/available', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetAvailableJobs);
+router.get('/jobs/available', checkUserJWT, checkUserRole(['HANDYMAN']), requireOfficialHandymanPartner, handleGetAvailableJobs);
 router.post('/jobs/:jobId/reviews', checkUserJWT, checkUserRole(['CUSTOMER', 'HANDYMAN']), createReview);
 
 // BIDDING — Handyman actions
 router.get('/handyman/my-bids', checkUserJWT, checkUserRole(['HANDYMAN']), handleGetMyBids);
-router.post('/jobs/:id/bids', checkUserJWT, checkUserRole(['HANDYMAN']), handleSubmitBid);
-router.patch('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN']), handleUpdateBid);
+router.post('/jobs/:id/bids', checkUserJWT, checkUserRole(['HANDYMAN']), requireOfficialHandymanPartner, handleSubmitBid);
+router.patch('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN']), requireOfficialHandymanPartner, handleUpdateBid);
 router.delete('/jobs/:id/bids/:bidId', checkUserJWT, checkUserRole(['HANDYMAN']), handleWithdrawBid);
 
 // BIDDING — Customer actions

@@ -11,6 +11,7 @@ import {
   emitJobLifecycleEvent
 } from '../../matchmaking/sockets/JobLifecycle.gateway.js';
 
+// Hàm để khôi phục trạng thái công việc về "BIDDING" nếu giao dịch thanh toán bị thất bại hoặc hết hạn, và xóa các trường khóa liên quan đến giao dịch đó.
 const restoreJobToBidding = async (paymentTransaction, {
   transaction,
   changedByUserId = null
@@ -65,6 +66,8 @@ const restoreJobToBidding = async (paymentTransaction, {
   }, { transaction });
 };
 
+// Hàm để đánh dấu một giao dịch đang chờ xử lý (PENDING) thành trạng thái mới (FAILED hoặc EXPIRED), 
+// và nếu giao dịch liên quan đến một công việc, khôi phục trạng thái công việc về "BIDDING" nếu cần thiết.
 const markPendingTransactionService = async ({
   transactionId = null,
   paymentMethod = null,
@@ -139,6 +142,7 @@ const markPendingTransactionService = async ({
   }
 };
 
+// Hàm để xử lý thanh toán thành công từ cổng thanh toán, xác nhận giao dịch
 const processSuccessfulGatewayPayment = async ({
   paymentMethod,
   gatewayCode,
@@ -148,13 +152,15 @@ const processSuccessfulGatewayPayment = async ({
   let acceptedEvent = null;
 
   try {
+    // 
     const paymentTransaction = await Transaction.findOne({
       where: {
         payment_method: paymentMethod,
         payment_gateway_code: String(gatewayCode)
       },
       transaction: trans,
-      lock: trans.LOCK.UPDATE
+      lock: trans.LOCK.UPDATE 
+      // lock: ngăn chặn các giao dịch khác thay đổi dữ liệu trong khi giao dịch hiện tại đang được xử lý, đảm bảo tính nhất quán của dữ liệu.
     });
 
     if (!paymentTransaction) {
@@ -175,6 +181,7 @@ const processSuccessfulGatewayPayment = async ({
       };
     }
 
+    // Nếu giao dịch không ở trạng thái PENDING 
     if (paymentTransaction.status !== 'PENDING') {
       await trans.rollback();
       return {
@@ -184,11 +191,13 @@ const processSuccessfulGatewayPayment = async ({
       };
     }
 
+    // Kiểm tra xem số tiền thanh toán có khớp với số tiền của giao dịch hay không
     if (Number(paymentTransaction.amount) !== Number(paidAmount)) {
       await trans.rollback();
       return { EM: "Payment amount does not match the transaction.", EC: 400, DT: "" };
     }
 
+    // Tìm ví đích dựa trên to_wallet_id của giao dịch thanh toán
     const destinationWallet = await Wallet.findByPk(paymentTransaction.to_wallet_id, {
       transaction: trans,
       lock: trans.LOCK.UPDATE
@@ -212,6 +221,7 @@ const processSuccessfulGatewayPayment = async ({
         };
       }
 
+      // Nếu giao dịch là DEPOSIT_10, xác nhận rằng công việc đang chờ thanh toán và giao dịch này là giao dịch khóa
       const job = await Job.findByPk(paymentTransaction.job_id, {
         transaction: trans,
         lock: trans.LOCK.UPDATE
@@ -231,6 +241,7 @@ const processSuccessfulGatewayPayment = async ({
         };
       }
 
+      // Nếu tất cả các điều kiện đều thỏa mãn, tăng số dư của ví đích và đánh dấu giao dịch là SUCCESS.
       const selectedBid = await Bid.findOne({
         where: {
           id: job.selected_bid_id,
@@ -246,6 +257,8 @@ const processSuccessfulGatewayPayment = async ({
         return { EM: "Selected bid is no longer available.", EC: 409, DT: "" };
       }
 
+      //////////////////////////////////////////////////////////
+      // Tăng số dư của ví đích và đánh dấu giao dịch là SUCCESS
       await destinationWallet.increment(
         { balance: Number(paymentTransaction.amount) },
         { transaction: trans }

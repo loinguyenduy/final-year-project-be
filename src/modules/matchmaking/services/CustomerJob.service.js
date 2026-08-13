@@ -205,6 +205,7 @@ const createJobService = async (userId, jobData) => {
 
         trans = await db.transaction();
 
+        // Nếu có phiên AI được liên kết, khóa phiên AI 
         const aiSession = ai_assistant_session_id
             ? await lockApplicableAiSession({
                 sessionId: ai_assistant_session_id,

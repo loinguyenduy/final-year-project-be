@@ -1,5 +1,8 @@
 import User from '../models/User.model.js';
 
+/*
+Middleware kiểm tra xem người dùng có đủ điều kiện để gửi yêu cầu KYC hay không.
+*/
 const requireKycSubmissionEligibility = (expectedRole) => async (req, res, next) => {
   try {
     const user = await User.findByPk(req.user?.id, {

@@ -3,6 +3,8 @@ import {
   getOfficialHandymanPartnerEligibility
 } from '../services/HandymanPartnerEligibility.service.js';
 
+// Middleware kiểm tra xem người dùng hiện tại có đủ điều kiện để trở thành 
+// đối tác chính thức của Handyman hay không.
 const requireOfficialHandymanPartner = async (req, res, next) => {
   try {
     const eligibility = await getOfficialHandymanPartnerEligibility(req.user?.id);

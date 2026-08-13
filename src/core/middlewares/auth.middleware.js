@@ -1,8 +1,8 @@
 import { verifyToken } from "../utils/jwt.util.js";
 import User from '../../modules/identity/models/User.model.js';
 
-// Protected APIs accept access tokens only. The refresh cookie is reserved for
-// /auth/refresh and must never be verified with the access-token secret.
+
+// Trích xuất token từ header Authorization (Bearer token) của request
 const extractToken = (req) => {
   const authorization = req.headers.authorization;
   if (!authorization || typeof authorization !== "string") return null;

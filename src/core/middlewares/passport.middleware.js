@@ -10,16 +10,20 @@ const PROVIDER_VARIABLES = Object.freeze({
   facebook: ['FACEBOOK_APP_ID', 'FACEBOOK_APP_SECRET', 'FACEBOOK_REDIRECT_URI'],
 });
 
+// Hàm kiểm tra các biến môi trường 
 const getMissingOAuthProviderVariables = (provider) => {
   const names = PROVIDER_VARIABLES[provider] || [];
   return names.filter((name) => !String(process.env[name] || '').trim());
 };
 
+// Hàm  kiểm tra xem một nhà cung cấp OAuth có được cấu hình đầy đủ hay không dựa trên các
+//  biến môi trường. 
 const isOAuthProviderConfigured = (provider) => (
   Object.hasOwn(PROVIDER_VARIABLES, provider)
   && getMissingOAuthProviderVariables(provider).length === 0
 );
 
+// Hàm xác minh hồ sơ người dùng OAuth
 const profileVerifier = async (_accessToken, _refreshToken, profile, done) => {
   try {
     return done(null, profile);

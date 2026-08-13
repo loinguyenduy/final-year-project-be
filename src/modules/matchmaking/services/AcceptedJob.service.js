@@ -937,6 +937,10 @@ const validateMovingPayload = (payload = {}) => {
     return validation;
 };
 
+// Hàm cho phép thợ bắt đầu di chuyển đến địa điểm công việc. 
+// Nó kiểm tra tính hợp lệ của jobId, xác thực payload GPS, 
+// và đảm bảo rằng thợ là người được chọn cho công việc. 
+// Nếu tất cả các điều kiện đều hợp lệ, nó cập nhật trạng thái công việc sang 'EN_ROUTE', lưu thông tin GPS và khoảng cách, và phát ra sự kiện lifecycle cho khách hàng. Nếu có lỗi xảy ra trong quá trình này, nó sẽ rollback transaction và trả về lỗi thích hợp.
 const startMovingService = async (jobId, handymanId, payload = {}) => {
     if (!isValidUuid(jobId)) {
         return serviceError('Invalid job id.', 400, 'VALIDATION_ERROR');

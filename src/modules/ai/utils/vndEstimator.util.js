@@ -50,6 +50,7 @@ const roundUp = (value) => (
   ((value + ROUNDING_STEP - 1n) / ROUNDING_STEP) * ROUNDING_STEP
 );
 
+//xây dựng ước lượng giá lịch sử dựa trên các ứng viên lịch sử và trạng thái hiện tại
 const buildHistoricalEstimate = ({
   amounts,
   candidateCount,
@@ -94,6 +95,8 @@ const buildHistoricalEstimate = ({
   minimum = minimum > typical ? typical : minimum;
   maximum = maximum < typical ? typical : maximum;
 
+  // Nếu có ít nhất 6 mẫu và IQR nhỏ hơn hoặc bằng giá trị typical, thì confidence là MEDIUM, ngược lại là LOW
+  // Ít hơn 3 mẫu thì confidence là INSUFFICIENT_DATA
   const confidence = sample.length >= 6 && iqr <= rawTypical ? 'MEDIUM' : 'LOW';
   return {
     suggested_min_amount: minimum.toString(),

@@ -8,6 +8,8 @@ const socketAuthError = (message, code = 'SOCKET_AUTHENTICATION_FAILED', ec = 40
   return error;
 };
 
+// Middleware xác thực socket dựa trên token JWT. 
+// Nếu token hợp lệ, thông tin người dùng sẽ được lưu trong socket.data.user.
 const authenticateSocket = async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
@@ -35,6 +37,7 @@ const authenticateSocket = async (socket, next) => {
       return next(socketAuthError('This account role may not connect to realtime services.', 'SOCKET_UNAUTHORIZED', 403));
     }
 
+    // Lưu thông tin người dùng vào socket.data.user để sử dụng trong các middleware và sự kiện socket khác.
     socket.data.user = {
       id: user.id,
       role: user.role,

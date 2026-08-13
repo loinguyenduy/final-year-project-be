@@ -126,6 +126,7 @@ const loadCurrentJobParticipants = async (job, userId, transaction) => {
   };
 };
 
+//  tạo hoặc lấy cuộc trò chuyện 
 const createOrGetConversationService = async (jobId, userId) => {
   assertValidUuid(jobId, 'job id');
   let response;

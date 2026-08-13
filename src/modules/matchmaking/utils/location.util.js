@@ -31,6 +31,7 @@ const hasCoordinateValue = (value) => (
     && value !== 'null'
 );
 
+// Hàm này kiểm tra xem cặp tọa độ GPS có hợp lệ hay không và trả về kết quả cùng với thông tin chi tiết.
 const parseCoordinatePair = (latitudeValue, longitudeValue, { required = false } = {}) => {
     const hasLatitude = hasCoordinateValue(latitudeValue);
     const hasLongitude = hasCoordinateValue(longitudeValue);
@@ -126,6 +127,7 @@ const validateJobLocationInput = ({
     };
 };
 
+// Hàm kiểm tra xem hai cặp tọa độ GPS có gần nhau trong một ngưỡng nhất định hay không, 
 const coordinatesMatch = (latitudeA, longitudeA, latitudeB, longitudeB, tolerance = 0.00000001) => {
     const first = parseCoordinatePair(latitudeA, longitudeA);
     const second = parseCoordinatePair(latitudeB, longitudeB);
@@ -135,23 +137,27 @@ const coordinatesMatch = (latitudeA, longitudeA, latitudeB, longitudeB, toleranc
         && Math.abs(first.longitude - second.longitude) <= tolerance;
 };
 
+// Tính khoảng cách giữa hai điểm GPS bằng công thức Haversine
 const calculateRawDistanceKm = (latitudeA, longitudeA, latitudeB, longitudeB) => {
     const R = 6371;
     const toRad = value => (value * Math.PI) / 180;
     const dLat = toRad(latitudeB - latitudeA);
     const dLon = toRad(longitudeB - longitudeA);
+    // dLat: sự khác biệt về vĩ độ giữa hai điểm, được chuyển đổi sang radian.
+    // dLon: sự khác biệt về kinh độ giữa hai điểm, được chuyển đổi sang radian.
+    // a: một giá trị trung gian trong công thức Haversine, đại diện cho bình phương nửa cung của góc giữa hai điểm. 
     const a = Math.sin(dLat / 2) ** 2
         + Math.cos(toRad(latitudeA)) * Math.cos(toRad(latitudeB)) * Math.sin(dLon / 2) ** 2;
     const normalizedA = Math.min(1, Math.max(0, a));
     return R * 2 * Math.atan2(Math.sqrt(normalizedA), Math.sqrt(1 - normalizedA));
 };
 
-// Haversine distance rounded to the nearest metre for lifecycle audit snapshots.
+// Tính khoảng cách giữa hai điểm GPS và trả về kết quả bằng mét, làm tròn đến số nguyên gần nhất.
 const calculateDistanceMeters = (latitudeA, longitudeA, latitudeB, longitudeB) => (
     Math.round(calculateRawDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB) * 1000)
 );
 
-// Existing public behaviour: distance in kilometres rounded to two decimals.
+// Tính khoảng cách giữa hai điểm GPS và trả về kết quả bằng km, làm tròn đến 2 chữ số thập phân.
 const calculateDistanceKm = (latitudeA, longitudeA, latitudeB, longitudeB) => (
     parseFloat(calculateRawDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB).toFixed(2))
 );

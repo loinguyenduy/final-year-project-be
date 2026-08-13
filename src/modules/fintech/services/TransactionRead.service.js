@@ -32,6 +32,7 @@ const decodeCursor = (cursor) => {
 
 const walletStatus = (wallet) => wallet.is_blocked ? 'BLOCKED' : 'ACTIVE';
 
+// Hàm để lấy tổng hợp thông tin giao dịch cho một danh sách các ID ví, bao gồm tổng số tiền đến, tổng số tiền đi, số lượng giao dịch thành công, đang chờ xử lý và thất bại, cũng như thời điểm giao dịch cuối cùng.
 const getWalletAggregates = async (walletIds) => {
   if (!walletIds.length) return new Map();
   const aggregate = (field) => Transaction.findAll({
@@ -62,6 +63,7 @@ const getWalletAggregates = async (walletIds) => {
   return result;
 };
 
+// Hàm để lấy tất cả các giao dịch liên quan đến một người dùng cụ thể, với các tùy chọn lọc và phân trang.
 const getMyWallets = async (userId) => {
   const wallets = await Wallet.findAll({ where: { user_id: userId }, attributes: ['id', 'wallet_type', 'balance', 'currency', 'is_blocked', 'updatedAt'], order: [['wallet_type', 'ASC']] });
   const aggregates = await getWalletAggregates(wallets.map((entry) => entry.id));
@@ -80,6 +82,7 @@ const partyLabel = (wallet, ownWalletIds) => {
   return { kind: 'PARTICIPANT', label: 'Service participant' };
 };
 
+// 
 const getMyTransactions = async ({ userId, query = {} }) => {
   const limit = parsePositiveInteger(query.limit, 'limit', 20, 100);
   const wallets = await Wallet.findAll({ where: { user_id: userId }, attributes: ['id', 'wallet_type', 'currency'] });

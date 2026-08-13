@@ -127,6 +127,7 @@ const buildArrivalPolicy = ({ rejectionCount, config, retryAfterSeconds = 0 }) =
     retry_after_seconds: retryAfterSeconds > 0 ? retryAfterSeconds : null
 });
 
+// Hàm  cho phép thợ gửi yêu cầu xác nhận đến địa điểm công việc.
 const requestArrivalService = async (jobId, handymanId, payload = {}) => {
     if (!isValidUuid(jobId)) {
         return serviceError('Invalid job id.', 400, 'VALIDATION_ERROR');
@@ -296,6 +297,7 @@ const requestArrivalService = async (jobId, handymanId, payload = {}) => {
             jobCoordinates
         });
         const requestedAt = new Date();
+        // Tạo một bản ghi yêu cầu đến địa điểm công việc mới trong cơ sở dữ liệu, bao gồm thông tin về công việc, thợ, vị trí GPS và khoảng cách.
         const arrivalRequest = await JobArrivalRequest.create({
             job_id: job.id,
             acceptance_cycle: job.acceptance_cycle,
@@ -343,6 +345,7 @@ const requestArrivalService = async (jobId, handymanId, payload = {}) => {
     }
 };
 
+// Confirm arrival request
 const confirmArrivalService = async (jobId, requestId, customerId) => {
     if (!isValidUuid(jobId) || !isValidUuid(requestId)) {
         return serviceError('Invalid job or arrival request id.', 400, 'VALIDATION_ERROR');

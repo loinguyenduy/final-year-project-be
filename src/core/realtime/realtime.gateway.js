@@ -9,6 +9,8 @@ const registerRealtimeIo = (io) => {
     realtimeIo = io;
 };
 
+// Emit 1 sự kiện đến tất cả các socket của một danh sách người dùng cụ thể. 
+// Nếu realtimeIo chưa được khởi tạo, nó sẽ ghi cảnh báo và trả về false.
 const emitToUsers = (userIds, eventName, payload) => {
     if (!realtimeIo) {
         console.warn('[realtime] Socket.IO is not initialized; lifecycle event was not emitted.', {
@@ -25,6 +27,7 @@ const emitToUsers = (userIds, eventName, payload) => {
     return true;
 };
 
+// Emit 1 sự kiện đến tất cả các socket của một vai trò cụ thể.
 const emitToRole = (role, eventName, payload) => {
     if (!realtimeIo) {
         console.warn('[realtime] Socket.IO is not initialized; role event was not emitted.', {
@@ -37,6 +40,7 @@ const emitToRole = (role, eventName, payload) => {
     return true;
 };
 
+// Ngắt kết nối tất cả các socket của một người dùng cụ thể.
 const disconnectUserSockets = (userId) => {
     if (!realtimeIo) return false;
     realtimeIo.in(getUserRoom(userId)).disconnectSockets(true);

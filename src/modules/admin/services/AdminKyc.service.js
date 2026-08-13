@@ -164,6 +164,11 @@ const getSubmissionHistory = async (userId) => {
   });
 };
 
+// Hàm getKycRequestDetailService lấy chi tiết của một yêu cầu KYC dựa trên submissionId.
+//  Nó kiểm tra tính hợp lệ của submissionId, truy vấn cơ sở dữ liệu để lấy tất cả các
+//  tài liệu liên quan đến submissionId đó, và xác định thông tin về người dùng sở
+//  hữu yêu cầu KYC, trạng thái của yêu cầu, số lượng tài liệu, và các hành động được
+//  phép thực hiện. 
 const getKycRequestDetailService = async (submissionId) => {
   assertUuid(submissionId, 'submissionId');
   const documents = await KycRequest.findAll({
@@ -222,6 +227,7 @@ const getKycRequestDetailService = async (submissionId) => {
   };
 };
 
+// Hàm lấy URL truy cập tài liệu KYC cho admin 
 const getKycDocumentAccessService = async ({ submissionId, documentId }) => {
   assertUuid(submissionId, 'submissionId');
   assertUuid(documentId, 'documentId');
@@ -247,6 +253,10 @@ const getKycDocumentAccessService = async ({ submissionId, documentId }) => {
   };
 };
 
+// Hàm validateDecision kiểm tra tính hợp lệ của quyết định KYC (APPROVE hoặc REJECT) và các lý do liên quan. 
+// Nó đảm bảo rằng các lý do từ chối được cung cấp đúng cách và không chứa ký tự điều khiển không hợp lệ. 
+// Nếu quyết định là APPROVE, không được phép có lý do từ chối. Nếu quyết định là REJECT, 
+// phải có lý do từ chối hợp lệ và nếu lý do là OTHER, phải có ghi chú bổ sung.
 const validateDecision = (payload = {}) => {
   const decision = String(payload.decision || '').trim().toUpperCase();
   if (!['APPROVE', 'REJECT'].includes(decision)) {
@@ -278,6 +288,8 @@ const validateDecision = (payload = {}) => {
   }
   return { decision, reasonCode, reasonText };
 };
+
+// Hàm xử lý việc xem xét một yêu cầu KYC dựa trên submissionId.
 
 const reviewKycRequestService = async ({ submissionId, admin, payload, requestMeta }) => {
   assertUuid(submissionId, 'submissionId');
@@ -327,6 +339,7 @@ const reviewKycRequestService = async ({ submissionId, admin, payload, requestMe
       if (!handymanProfile) throw new AdminKycError('Handyman profile not found.', 409, 'SOURCE_STATE_CHANGED');
     }
 
+    // Update KYC status
     const reviewedAt = new Date();
     const documentStatus = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
     const userStatus = decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED';
@@ -360,6 +373,7 @@ const reviewKycRequestService = async ({ submissionId, admin, payload, requestMe
       await handymanProfile.update({ handyman_level: 'C2' }, { transaction });
     }
 
+    // Tạo log audit cho admin
     await createAdminAuditLog({
       adminId: admin.id,
       action: decision === 'APPROVE' ? ADMIN_AUDIT_ACTIONS.KYC_APPROVED : ADMIN_AUDIT_ACTIONS.KYC_REJECTED,
@@ -384,13 +398,15 @@ const reviewKycRequestService = async ({ submissionId, admin, payload, requestMe
     await transaction.commit();
 
     const occurredAt = new Date().toISOString();
+    // Gửi thông báo thời gian thực đến tất cả các socket của role ADMIN và user
     try {
       emitToRole('ADMIN', KYC_REALTIME_EVENTS.ADMIN_QUEUE_UPDATED, {
         event_id: crypto.randomUUID(),
         occurred_at: occurredAt,
         queue: 'KYC'
       });
-      emitToUsers([userId], KYC_REALTIME_EVENTS.REVIEWED, {
+      // Gửi thông báo realtime đến người dùng cụ thể về việc KYC đã được xem xét. 
+      emitToUsers([userId], KYC_REALTIME_EVENTS.REVIEWED, { 
         event_id: crypto.randomUUID(),
         occurred_at: occurredAt,
         resource: 'KYC'

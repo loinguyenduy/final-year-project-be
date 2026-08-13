@@ -111,6 +111,7 @@ const correctDiagnosis = async ({
   return result;
 };
 
+// chuẩn bị xác nhận chẩn đoán cho phiên làm việc, kiểm tra trạng thái và khóa phiên.
 const prepareDiagnosisConfirmation = async ({
   customerId,
   sessionId,
@@ -191,6 +192,7 @@ const commitDiagnosisConfirmation = async ({
   return { sessionId: session.id };
 });
 
+// Xử lý quyết định chẩn đoán của phiên làm việc
 const decideSessionDiagnosis = async ({
   customerId,
   sessionId,
@@ -210,6 +212,7 @@ const decideSessionDiagnosis = async ({
   if (body.action === 'CORRECT_DIAGNOSIS') {
     result = await correctDiagnosis({ customerId, sessionId, expectedRevision });
   } else {
+    // Nếu hành động là xác nhận chẩn đoán, chuẩn bị và xác nhận chẩn đoán
     const prepared = await prepareDiagnosisConfirmation({
       customerId,
       sessionId,
@@ -218,10 +221,12 @@ const decideSessionDiagnosis = async ({
     if (prepared.missing || prepared.expired || prepared.revisionConflict || prepared.invalidState) {
       result = prepared;
     } else {
+      // Nếu hợp lệ, ước lượng giá lịch sử và xác nhận chẩn đoán
       const estimate = await estimateHistoricalPrice({
         serviceId: prepared.serviceId,
         currentState: prepared.structuredState
       });
+      // xác nhận chẩn đoán và lưu trữ ước lượng giá
       result = await commitDiagnosisConfirmation({
         customerId,
         prepared,

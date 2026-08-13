@@ -7,6 +7,9 @@ import {
   parsePositiveVndInteger
 } from '../utils/vndEstimator.util.js';
 
+// Lấy các ứng viên lịch sử dựa trên serviceId và trạng thái hiện tại
+// lấy các công việc đã đóng với giá đề xuất hợp lệ, 
+// sắp xếp theo thời gian cập nhật gần nhất và giới hạn số lượng ứng viên.
 const retrieveHistoricalCandidates = async ({ serviceId, currentState }) => {
   const config = getAiConfig();
   const rows = await db.query(`
@@ -45,6 +48,7 @@ const retrieveHistoricalCandidates = async ({ serviceId, currentState }) => {
   };
 };
 
+// ước lượng giá lịch sử dựa trên các ứng viên lịch sử và trạng thái hiện tại
 const estimateHistoricalPrice = async ({ serviceId, currentState }) => {
   const config = getAiConfig();
   const retrieval = await retrieveHistoricalCandidates({ serviceId, currentState });

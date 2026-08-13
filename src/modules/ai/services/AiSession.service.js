@@ -23,6 +23,7 @@ import { resolveConversationLanguage } from '../utils/conversationLanguage.util.
 const providerStatus = (message) => message?.provider_metadata?.status || null;
 const isExpired = (session) => new Date(session.expires_at).getTime() <= Date.now();
 
+// Hàm nhận một đối tượng estimate và trả về một đối tượng mới chỉ chứa các trường cần thiết, đảm bảo rằng các giá trị không xác định được thay thế bằng null.
 const safeEstimate = (estimate) => {
   if (!estimate || typeof estimate !== 'object') return null;
   return {
@@ -38,6 +39,7 @@ const safeEstimate = (estimate) => {
   };
 };
 
+// Xây dựng một đối tượng form draft từ phiên làm việc và dịch vụ được phát hiện, bao gồm các thông tin như ID dịch vụ, mô tả vấn đề, và ước lượng ngân sách.
 const buildFormDraft = (session, service) => ({
   service_id: service?.id || null,
   service: service ? {
@@ -50,6 +52,8 @@ const buildFormDraft = (session, service) => ({
   estimated_budget_max: session.selected_budget?.budget_max || null
 });
 
+//kiểm tra và trả về một đối tượng selected budget an toàn, đảm bảo rằng các giá trị không xác định
+//  được thay thế bằng null.
 const safeSelectedBudget = (selectedBudget) => {
   if (!selectedBudget || typeof selectedBudget !== 'object') return null;
   return {
@@ -59,12 +63,14 @@ const safeSelectedBudget = (selectedBudget) => {
   };
 };
 
+// xác định giai đoạn hiện tại của phiên làm việc dựa trên trạng thái chẩn đoán và trạng thái của phiên làm việc, 
 const canonicalDtoStage = (session) => (
   session.structured_state?.diagnosis_confirmation === 'PENDING'
     ? 'REVIEW_DIAGNOSIS'
     : session.stage
 );
 
+// Hàm  nhận một phiên làm việc và service, và trả về một đối tượng review chẩn đoán nếu trạng thái xác nhận chẩn đoán là "PENDING" hoặc "CONFIRMED".
 const buildDiagnosisReview = (session, service) => {
   const state = session.structured_state || {};
   const confirmationStatus = state.diagnosis_confirmation
@@ -94,6 +100,7 @@ const buildDiagnosisReview = (session, service) => {
   return review;
 };
 
+// Hàm xác định các hành động mà người dùng có thể thực hiện dựa trên trạng thái hiện tại của phiên làm việc và cấu hình AI.
 const allowedActions = (session, config) => {
   if (AI_TERMINAL_SESSION_STATUSES.includes(session.status)) return [];
   if (session.status === 'DRAFT_READY') {
@@ -128,6 +135,8 @@ const allowedActions = (session, config) => {
     : ['ABANDON_SESSION'];
 };
 
+// nhận một phiên làm việc hoặc ID phiên làm việc và ID khách hàng, và trả về một đối tượng DTO (Data Transfer Object) chứa thông tin chi tiết về phiên làm việc,
+//  bao gồm trạng thái, giai đoạn, tin nhắn, ước lượng, và các hành động được phép thực hiện.
 const getSessionDto = async (sessionOrId, customerId) => {
   const session = typeof sessionOrId === 'string'
     ? await AiAssistantSession.findOne({
@@ -204,6 +213,7 @@ const getSessionDto = async (sessionOrId, customerId) => {
   };
 };
 
+// nhận một sessionId và customerId, kiểm tra xem phiên làm việc có tồn tại và thuộc về khách hàng đó không. 
 const expireOwnedSession = async (sessionId, customerId) => {
   const result = await db.transaction(async (transaction) => {
     const session = await AiAssistantSession.findOne({
@@ -226,12 +236,15 @@ const expireOwnedSession = async (sessionId, customerId) => {
   return AiAssistantSession.findByPk(result.sessionId);
 };
 
+// tạo một phiên làm việc AI mới cho khách hàng.
+// correlationId chính là id của request, được dùng để theo dõi các log liên quan đến request này.
 const createSession = async ({ customerId, body = {}, correlationId }) => {
   assertPlainObject(body, ['initial_message']);
   const initialMessage = body.initial_message === undefined
     ? null
     : normalizeCustomerText(body.initial_message, 'initial_message');
   const config = getAiConfig();
+  // Bắt đầu một transaction  khi tạo phiên làm việc mới.
   const session = await db.transaction(async (transaction) => {
     const customer = await User.findByPk(customerId, {
       attributes: ['id', 'role', 'is_active'],
@@ -241,6 +254,7 @@ const createSession = async ({ customerId, body = {}, correlationId }) => {
     if (!customer || customer.role !== 'CUSTOMER' || !customer.is_active) {
       throw new AiError('Active Customer account required.', 403, 'AI_CUSTOMER_REQUIRED');
     }
+    // Hủy bỏ tất cả các phiên làm việc AI đang hoạt động của khách hàng đã expired
     await AiAssistantSession.update(
       { status: 'EXPIRED' },
       {
@@ -252,6 +266,7 @@ const createSession = async ({ customerId, body = {}, correlationId }) => {
         transaction
       }
     );
+    // Đếm số lượng phiên làm việc đang hoạt động của khách hàng và kiểm tra xem có vượt quá giới hạn không.
     const activeCount = await AiAssistantSession.count({
       where: {
         customer_id: customerId,
@@ -266,6 +281,7 @@ const createSession = async ({ customerId, body = {}, correlationId }) => {
         'AI_ACTIVE_SESSION_LIMIT_REACHED'
       );
     }
+
     return AiAssistantSession.create({
       customer_id: customerId,
       status: 'ACTIVE',
@@ -284,7 +300,11 @@ const createSession = async ({ customerId, body = {}, correlationId }) => {
     }, { transaction });
   });
 
+  // Nếu có initialMessage, gửi tin nhắn đầu tiên đến phiên làm việc mới tạo.
   if (!initialMessage) return getSessionDto(session, customerId);
+  // Trả về kết quả của việc gửi tin nhắn đầu tiên đến phiên làm việc mới tạo,
+  //  bao gồm thông tin chi tiết về phiên làm việc và tin nhắn.
+  // Frontend lưu trữ sessionId lên URL 
   return sendSessionMessage({
     customerId,
     sessionId: session.id,
@@ -297,6 +317,9 @@ const createSession = async ({ customerId, body = {}, correlationId }) => {
   });
 };
 
+
+// xử lý việc gửi tin nhắn từ khách hàng đến phiên làm việc AI,
+// bao gồm kiểm tra trạng thái phiên làm việc, xác thực dữ liệu đầu vào,
 const reserveCustomerMessage = async ({
   customerId,
   sessionId,
@@ -304,14 +327,18 @@ const reserveCustomerMessage = async ({
   clientMessageId,
   expectedRevision,
   isRecalculation
-}) => db.transaction(async (transaction) => {
+}) 
+// Mở transaction để đảm bảo tính nhất quán dữ liệu khi gửi tin nhắn đến phiên làm việc AI.
+=> db.transaction(async (transaction) => {
   const config = getAiConfig();
+  //check exist and thuộc về customerId
   const session = await AiAssistantSession.findOne({
     where: { id: sessionId, customer_id: customerId },
     transaction,
     lock: transaction.LOCK.UPDATE
   });
   if (!session) return { missing: true };
+  // check expired
   if (isExpired(session) && !AI_TERMINAL_SESSION_STATUSES.includes(session.status)) {
     await session.update({
       status: 'EXPIRED',
@@ -319,15 +346,18 @@ const reserveCustomerMessage = async ({
     }, { transaction });
     return { expired: true };
   }
+  // check trạng thái phiên làm việc
   const conversationLanguage = resolveConversationLanguage(
     session.structured_state?.conversation_language,
     messageText
   );
 
+  // check idempotency: nếu đã có tin nhắn với cùng clientMessageId, kiểm tra trạng thái và trả về kết quả phù hợp.
   const existing = await AiAssistantMessage.findOne({
     where: { session_id: session.id, client_message_id: clientMessageId },
     transaction
   });
+  // Nếu đã có tin nhắn với cùng clientMessageId, replay kết quả
   if (existing) {
     if (existing.message_text !== messageText) return { idempotencyConflict: true };
     const status = providerStatus(existing);
@@ -388,6 +418,8 @@ const reserveCustomerMessage = async ({
     where: { session_id: session.id },
     transaction
   });
+
+  // Nếu message mới, tạo một bản ghi tin nhắn mới trong db
   const message = await AiAssistantMessage.create({
     session_id: session.id,
     sender: 'CUSTOMER',
@@ -429,6 +461,7 @@ const reserveCustomerMessage = async ({
   };
 });
 
+// Đánh dấu sự cố của nhà cung cấp
 const markProviderFailure = async ({
   sessionId,
   messageId,
@@ -457,6 +490,7 @@ const markProviderFailure = async ({
   });
 };
 
+// Xử lý quyết định giá của phiên làm việc AI, lưu trữ quyết định và trả về phản hồi cho người dùng.
 const getPriorCompletedMessages = async (sessionId, beforeSequence, limit) => {
   const rows = await AiAssistantMessage.findAll({
     where: {
@@ -479,6 +513,7 @@ const getPriorCompletedMessages = async (sessionId, beforeSequence, limit) => {
     }));
 };
 
+// Xử lý quyết định chẩn đoán của phiên làm việc AI, lưu trữ quyết định và trả về phản hồi cho người dùng.
 const mergeStructuredState = (previous, analysis, conversationLanguage) => ({
   conversation_language: conversationLanguage,
   diagnosis_confirmation: analysis.stage === 'READY_FOR_ESTIMATE'
@@ -507,6 +542,8 @@ const mergeStructuredState = (previous, analysis, conversationLanguage) => ({
   safety_message: analysis.safety_message
 });
 
+// xử lý response từ gemini, commit vào db, bao gồm cập nhật trạng thái phiên làm việc,
+//  lưu trữ tin nhắn và thông tin phân tích.
 const commitProviderResponse = async ({
   customerId,
   sessionId,
@@ -518,6 +555,7 @@ const commitProviderResponse = async ({
   isRecalculation,
   conversationLanguage
 }) => db.transaction(async (transaction) => {
+  // Lấy session và message từ db, kiểm tra trạng thái và xác thực dữ liệu trước khi commit response 
   const session = await AiAssistantSession.findOne({
     where: { id: sessionId, customer_id: customerId },
     transaction,
@@ -542,6 +580,9 @@ const commitProviderResponse = async ({
     }, { transaction });
     return { expired: true };
   }
+  //check revision: revision là số phiên bản của session, nó update khi có bất kỳ thay đổi nào trong session
+  //nó update revision khi có thay đổi như: gửi tin nhắn mới, cập nhật trạng thái, cập nhật structured_state
+
   if (Number(session.revision) !== reservedRevision
     || providerStatus(message) !== 'PROCESSING'
     || AI_TERMINAL_SESSION_STATUSES.includes(session.status)) {
@@ -585,6 +626,7 @@ const commitProviderResponse = async ({
       ? 'CLARIFYING'
       : 'COLLECTING_PROBLEM';
 
+      // Nếu hợp lệ, tạo message từ AI assistant
   await AiAssistantMessage.create({
     session_id: session.id,
     sender: 'ASSISTANT',
@@ -617,12 +659,13 @@ const commitProviderResponse = async ({
   return { sessionId: session.id };
 });
 
+// Xử lý send message từ khách hàng đến phiên làm việc AI
 const sendSessionMessage = async ({
   customerId,
   sessionId,
   body,
   correlationId,
-  isRecalculation = false
+  isRecalculation = false 
 }) => {
   assertPlainObject(
     body,
@@ -630,12 +673,15 @@ const sendSessionMessage = async ({
       ? ['message', 'client_message_id', 'expected_revision']
       : ['message', 'client_message_id', 'expected_revision']
   );
+  // validate dữ liệu đầu vào từ body
   const messageText = normalizeCustomerText(
     body.message,
     isRecalculation ? 'clarification' : 'message'
   );
   const clientMessageId = normalizeClientMessageId(body.client_message_id);
   const expectedRevision = normalizeExpectedRevision(body.expected_revision);
+  // xử lý gửi tin nhắn từ khách hàng đến phiên làm việc AI, bao gồm kiểm tra trạng thái phiên làm việc, 
+  // xác thực dữ liệu đầu vào, và gọi các hàm liên quan để phân tích và lưu trữ tin nhắn.
   const reservation = await reserveCustomerMessage({
     customerId,
     sessionId,
@@ -671,6 +717,7 @@ const sendSessionMessage = async ({
       conversation_language: conversationLanguage,
       ...(isRecalculation ? { diagnosis_confirmation: 'CORRECTING' } : {})
     };
+    // Lấy danh sách dịch vụ và các tin nhắn gần đây để phân tích cuộc trò chuyện.
     const [serviceCatalog, recentMessages] = await Promise.all([
       Service.findAll({
         where: { is_active: true },
@@ -683,6 +730,8 @@ const sendSessionMessage = async ({
         config.maxContextMessages
       )
     ]);
+    // phân tích cuộc trò chuyện dựa trên ngôn ngữ, danh sách dịch vụ, trạng thái cấu trúc, các tin nhắn gần đây, 
+    // và tin nhắn của khách hàng.
     const providerResult = await analyzeConversation({
       conversationLanguage,
       serviceCatalog,
@@ -704,6 +753,7 @@ const sendSessionMessage = async ({
         attributes: ['id', 'service_code', 'name']
       })
       : null;
+      // Commit response từ gemini 
     const committed = await commitProviderResponse({
       customerId,
       sessionId,

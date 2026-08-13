@@ -35,6 +35,8 @@ const requireOAuthProvider = (provider, { callback = false } = {}) => (req, res,
   } catch {
     frontendConfigured = false;
   }
+  // Kiểm tra xem nhà cung cấp OAuth có được cấu hình đầy đủ hay không và nếu là callback, kiểm tra xem frontend có được cấu hình hay không. 
+  // Nếu cả hai điều kiện đều thỏa mãn, tiếp tục với middleware tiếp theo. 
   if (isOAuthProviderConfigured(provider) && frontendConfigured) return next();
   if (callback) {
     if (!frontendConfigured) {
@@ -153,6 +155,8 @@ const completeSocialLink = async ({
   }
 };
 
+// Xử lý callback OAuth từ Google
+// callback có nghĩa là người dùng đã được xác thực bởi nhà cung cấp OAuth và nhà cung cấp đã chuyển hướng người dùng trở lại ứng dụng 
 const handleGoogleCallback = async (req, res) => {
   try {
     const state = typeof req.query.state === 'string' ? req.query.state : '';

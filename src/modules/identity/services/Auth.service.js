@@ -139,6 +139,7 @@ const checkPassword = async (inputPassword, hashPassword) => {
   return await bcrypt.compare(inputPassword, hashPassword);
 };
 
+// Xây dựng payload cho session dựa trên thông tin người dùng
 const buildSessionPayload = (user) => ({
   id: user.id,
   email: user.email,
@@ -147,10 +148,12 @@ const buildSessionPayload = (user) => ({
   auth_version: Number(user.auth_version || 0),
 });
 
-const issueSession = async (user, auditContext = null) => {
+// Kiểm tra xem thông tin người dùng có thay đổi trong quá trình tạo session không trước khi phát hành token.
+// ex: deactivate account...
+const issueSession = async (user, auditContext = null) => { //auditContext is only for admin login
   const transaction = await db.transaction();
   try {
-    const canonicalUser = await User.findByPk(user.id, { transaction, lock: transaction.LOCK.UPDATE });
+    const canonicalUser = await User.findByPk(user.id, { transaction, lock: transaction.LOCK.UPDATE }); 
     if (!canonicalUser || canonicalUser.role !== user.role || Number(canonicalUser.auth_version || 0) !== Number(user.auth_version || 0)) {
       const error = new Error('The account changed while the session was being created.');
       error.authResult = { EM: 'This session request is no longer valid. Please login again.', EC: 401, code: 'SESSION_REVOKED', DT: '' };
@@ -283,6 +286,7 @@ const handleLoginUser = async (inputUserData, options = {}) => {
       };
     }
 
+    // Issue session tokens (access and refresh) for the user
     const session = await issueSession(user, isAdminLogin ? options.auditContext : null);
 
     const userData = isAdminLogin
@@ -292,7 +296,7 @@ const handleLoginUser = async (inputUserData, options = {}) => {
         avatar_url: user.avatar_url || null, is_email_verified: Boolean(user.is_email_verified),
         kyc_status: user.kyc_status, is_active: Boolean(user.is_active), created_at: user.createdAt
       }
-      : await getCanonicalProfile(user.id);
+      : await getCanonicalProfile(user.id); // lấy thông tin hồ sơ người dùng chính xác (canonical profile)
 
     return {
       EM: "Login successfully.",
@@ -315,6 +319,7 @@ const handleLoginUser = async (inputUserData, options = {}) => {
   }
 };
 
+// Xử lý việc làm mới token (refresh token) 
 const handleRefreshToken = async (cookieToken) => {
   const transaction = await db.transaction();
   try {

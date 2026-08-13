@@ -37,9 +37,14 @@ const rollbackWith = async (transaction, result) => {
     return result;
 };
 
+// Dùng idempotency key để xác định giao dịch thanh toán còn lại cho một công việc và báo giá cụ thể.
 const getRemainingPaymentKey = (job, quote) => (
     `job:${job.id}:cycle:${job.acceptance_cycle}:quote:${quote.id}:remaining-payment`
 );
+
+
+// Nếu cùng một quote, cùng job và cùng acceptance cycle được submit lại 10 lần, 
+// cả 10 lần đều tạo ra đúng một chuỗi.
 
 const validateCanonicalQuote = (quote, items, bidAmount) => {
     const normalized = normalizeStoredQuote(quote, items, bidAmount);
@@ -126,6 +131,7 @@ const buildCompletedPaymentResult = ({ code, message, job, quote, contract, amou
     }
 });
 
+// kiểm tra tính hợp lệ của trạng thái thanh toán còn lại cho một công việc và báo giá cụ thể.
 const validateCompletedPaymentState = async ({
     job,
     quote,
@@ -143,6 +149,7 @@ const validateCompletedPaymentState = async ({
             'PAYMENT_STATE_INCONSISTENT'
         );
     }
+    // deterministic idempotency 
     const paymentKey = getRemainingPaymentKey(job, quote);
     const payment = await Transaction.findOne({
         where: { idempotency_key: paymentKey },

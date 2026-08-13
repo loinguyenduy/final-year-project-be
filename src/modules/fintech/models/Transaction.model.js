@@ -122,6 +122,7 @@ const Transaction = db.define('Transaction', {
                 reference_transaction_id: { [Op.ne]: null }
             }
         },
+        // unique index
         {
             name: 'transactions_idempotency_key_unique',
             unique: true,

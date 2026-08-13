@@ -324,6 +324,7 @@ const getPublicHandymanProfileService = async (customerId, jobId, handymanId) =>
     }
 };
 
+// Xử lý so sánh các bid của một công việc cụ thể. Nó nhận vào customerId, job_id và một mảng bid_ids để so sánh.
 const compareBidsService = async (customerId, { job_id, bid_ids }) => {
     try {
         if (!job_id) {

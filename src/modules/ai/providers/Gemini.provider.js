@@ -6,6 +6,7 @@ import {
   validateAiStructuredResponse
 } from '../validators/aiResponse.validator.js';
 
+// Xác định cấu trúc dữ liệu JSON mà Gemini sẽ trả về. 
 const RESPONSE_JSON_SCHEMA = Object.freeze({
   type: 'object',
   properties: {
@@ -56,6 +57,10 @@ const RESPONSE_JSON_SCHEMA = Object.freeze({
   ]
 });
 
+// Tạo ra hướng dẫn hệ thống cho Gemini dựa trên ngôn ngữ hội thoại được cung cấp. 
+// Hướng dẫn này xác định vai trò của Gemini là một trợ lý mô tả công việc, nhấn mạnh rằng nó không phải là
+//  kỹ thuật viên tại chỗ và không được đưa ra chẩn đoán cụ thể hay ước lượng giá cả. 
+// Nó cũng chỉ ra các thông tin mà Gemini không được yêu cầu, như email, số điện thoại, địa chỉ chính xác, GPS, danh tính, ví, thanh toán hoặc dữ liệu KYC.
 const buildSystemInstruction = (conversationLanguage) => `
 You are a job-description assistant for a managed home-services platform.
 Help the customer describe a repair need and choose only a Service from the supplied active catalog.
@@ -82,6 +87,7 @@ that the dangerous source is not used and appropriate help is contacted. Do not 
 technical instructions. Return only the requested structured JSON.
 `.trim();
 
+// Nhận một đối tượng metadata về việc sử dụng từ Gemini và trả về một đối tượng mới chỉ chứa các trường số nguyên hợp lệ, hoặc null nếu không có metadata hợp lệ.
 const safeUsageMetadata = (usageMetadata) => {
   if (!usageMetadata || typeof usageMetadata !== 'object') return null;
   return {
@@ -97,6 +103,7 @@ const safeUsageMetadata = (usageMetadata) => {
   };
 };
 
+// Xác định các trạng thái phiên làm việc AI mà trong đó phiên làm việc được coi là đã kết thúc và không còn hoạt động.
 const mapProviderError = (error) => {
   if (error instanceof AiError) return error;
   if (error?.name === 'TimeoutError'
@@ -119,6 +126,7 @@ const mapProviderError = (error) => {
   );
 };
 
+// Xây dựng nội dung cho yêu cầu AI dựa trên các tham số đầu vào.
 const buildContents = ({
   conversationLanguage,
   recentMessages = [],
@@ -126,17 +134,22 @@ const buildContents = ({
   structuredState,
   customerMessage
 }) => {
+  // Xây dựng danh sách các tin nhắn trước đó và tin nhắn hiện tại của user
   const priorContents = recentMessages.map((message) => ({
     role: message.sender === 'ASSISTANT' ? 'model' : 'user',
     parts: [{ text: message.message_text }]
   }));
+  // Dựa trên danh sách service 
   const currentContext = {
     active_service_catalog: serviceCatalog.map((service) => ({
       service_code: service.service_code,
       name: service.name
     })),
+    // Thông tin ngôn ngữ hội thoại
     conversation_language: conversationLanguage,
+    // Trạng thái cấu trúc hiện tại của cuộc trò chuyện
     current_structured_state: structuredState || {},
+    // Tin nhắn hiện tại của khách hàng
     customer_message: customerMessage
   };
   return [
@@ -152,6 +165,8 @@ const buildContents = ({
   ];
 };
 
+// Gửi yêu cầu đến Gemini để phân tích cuộc trò chuyện AI dựa trên các tham số đầu vào, 
+// xử lý phản hồi và xác thực dữ liệu trả về.
 const analyzeConversation = async ({
   conversationLanguage,
   serviceCatalog,
@@ -207,6 +222,7 @@ const analyzeConversation = async ({
       const activeServiceCodes = new Set(
         serviceCatalog.map((service) => String(service.service_code).toUpperCase())
       );
+      // check service_code: nếu Gemini chọn một Service không có trong danh sách active catalog, ném lỗi.
       const effectiveServiceCode = data.service_code
         ?? structuredState?.service_code
         ?? null;
@@ -217,6 +233,7 @@ const analyzeConversation = async ({
           'AI_RESPONSE_INVALID'
         );
       }
+      // nếu Gemini đánh dấu chẩn đoán là READY_FOR_ESTIMATE, kiểm tra các trường bắt buộc và missing_information.
       if (data.stage === 'READY_FOR_ESTIMATE') {
         const effectiveSummary = data.problem_summary
           ?? structuredState?.problem_summary

@@ -8,6 +8,7 @@ const positiveInteger = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+// Tạo một middleware rate limiter với các tùy chọn được cung cấp.
 const createLimiter = ({ windowMinutes, maxRequests }) => rateLimit({
   windowMs: windowMinutes * 60 * 1000,
   limit: maxRequests,
@@ -21,21 +22,25 @@ const createLimiter = ({ windowMinutes, maxRequests }) => rateLimit({
   })
 });
 
+// Limit khi người dùng đăng nhập với vai trò participant (CUSTOMER hoặc HANDYMAN)
 const participantLoginRateLimiter = createLimiter({
   windowMinutes: positiveInteger(process.env.AUTH_LOGIN_RATE_LIMIT_WINDOW_MINUTES, 15),
   maxRequests: positiveInteger(process.env.AUTH_LOGIN_RATE_LIMIT_MAX_ATTEMPTS, 10)
 });
 
+// Limit khi người dùng đăng nhập với vai trò admin
 const adminLoginRateLimiter = createLimiter({
   windowMinutes: positiveInteger(process.env.ADMIN_LOGIN_RATE_LIMIT_WINDOW_MINUTES, 15),
   maxRequests: positiveInteger(process.env.ADMIN_LOGIN_RATE_LIMIT_MAX_ATTEMPTS, 5)
 });
 
+// Limit khi admin thực hiện các hành động liên quan đến mật khẩu (ví dụ: reset password, change password)
 const adminMutationRateLimiter = createLimiter({
   windowMinutes: positiveInteger(process.env.ADMIN_MUTATION_RATE_LIMIT_WINDOW_MINUTES, 5),
   maxRequests: positiveInteger(process.env.ADMIN_MUTATION_RATE_LIMIT_MAX_REQUESTS, 30)
 });
 
+// Limit khi người dùng thực hiện các hành động liên quan đến mật khẩu (ví dụ: reset password, change password)
 const passwordActionRateLimiter = createLimiter({
   windowMinutes: positiveInteger(process.env.PASSWORD_ACTION_RATE_LIMIT_WINDOW_MINUTES, 15),
   maxRequests: positiveInteger(process.env.PASSWORD_ACTION_RATE_LIMIT_MAX_REQUESTS, 5)
@@ -44,6 +49,7 @@ const passwordActionRateLimiter = createLimiter({
 const aiWindowMs = positiveInteger(process.env.AI_RATE_LIMIT_WINDOW_MS, 900000);
 const aiMaxRequests = positiveInteger(process.env.AI_RATE_LIMIT_MAX, 20);
 
+// Limit khi người dùng gửi yêu cầu đến AI assistant (dựa trên IP)
 const aiLimiterOptions = {
   windowMs: aiWindowMs,
   limit: aiMaxRequests,

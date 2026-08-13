@@ -22,8 +22,10 @@ import {
   parseOrigin,
 } from '../../../core/config/publicUrls.config.js';
 
+
 const emitProtocolError = (socket, envelope) => socket.emit(CHAT_EVENTS.ERROR, envelope);
 
+// Hàm check xem callback có được cung cấp hay không
 const requireAcknowledgement = (socket, ack) => {
   if (typeof ack === 'function') return true;
   emitProtocolError(socket, {
@@ -35,6 +37,7 @@ const requireAcknowledgement = (socket, ack) => {
   return false;
 };
 
+// Hàm refresh thông tin người dùng từ cơ sở dữ liệu và kiểm tra trạng thái của người dùng
 const refreshSocketUser = async (socket) => {
   const user = await User.findByPk(socket.data.user.id);
   if (!user || !user.is_active) {
@@ -55,6 +58,7 @@ const refreshSocketUser = async (socket) => {
   return user;
 };
 
+// Xử lý lỗi cho các sự kiện socket, bao gồm việc log lỗi, gửi phản hồi lỗi và ngắt kết nối nếu cần thiết
 const handleEventError = (socket, ack, error, operation) => {
   if (!(error instanceof ChatError)) {
     console.error(`[chat] Socket ${operation} failed.`, {
@@ -72,6 +76,7 @@ const handleEventError = (socket, ack, error, operation) => {
   }
 };
 
+// Đăng ký các trình xử lý sự kiện chat cho socket, bao gồm join, leave, send message và read
 const registerChatHandlers = (socket) => {
   socket.on(CHAT_EVENTS.JOIN, async (payload, ack) => {
     if (!requireAcknowledgement(socket, ack)) return;
@@ -115,6 +120,8 @@ const registerChatHandlers = (socket) => {
     }
   });
 
+  // Xử lý sự kiện gửi tin nhắn, bao gồm xác thực người dùng, kiểm tra payload, 
+  // kiểm tra giới hạn tốc độ và gửi tin nhắn
   socket.on(CHAT_EVENTS.SEND_MESSAGE, async (payload, ack) => {
     if (!requireAcknowledgement(socket, ack)) return;
     try {
@@ -155,6 +162,8 @@ const registerChatHandlers = (socket) => {
     }
   });
 
+  // Xử lý sự kiện đánh dấu tin nhắn đã đọc, 
+  // bao gồm xác thực người dùng và cập nhật trạng thái đọc
   socket.on(CHAT_EVENTS.READ, async (payload, ack) => {
     if (!requireAcknowledgement(socket, ack)) return;
     try {
@@ -189,6 +198,7 @@ const registerChatHandlers = (socket) => {
   });
 };
 
+// Hàm phân tích và xác thực các nguồn gốc CORS cho Socket.IO, đảm bảo rằng chúng hợp lệ và không chứa ký tự đại diện khi xác thực được bật
 const parseCorsOrigins = () => {
   const raw = process.env.SOCKET_CORS_ORIGIN
     || process.env.FRONTEND_URL
@@ -202,7 +212,9 @@ const parseCorsOrigins = () => {
   return origins.length === 1 ? origins[0] : origins;
 };
 
+// Khởi tạo server socket
 const initializeChatSocket = (httpServer) => {
+  // Tạo một instance của Socket.IO server với cấu hình CORS
   const io = new Server(httpServer, {
     cors: {
       origin: parseCorsOrigins(),
@@ -211,7 +223,7 @@ const initializeChatSocket = (httpServer) => {
     }
   });
 
-  io.use(authenticateSocket);
+  io.use(authenticateSocket); // Middleware xác thực socket trước khi xử lý các sự kiện
   io.on('connection', (socket) => {
     socket.join(getUserRoom(socket.data.user.id));
     if (socket.data.user.role === 'ADMIN') {

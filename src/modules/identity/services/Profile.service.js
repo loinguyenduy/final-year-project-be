@@ -15,7 +15,7 @@ import { getCanonicalProfile } from './ParticipantRead.service.js';
 
 const VALID_WORK_TIMES = ['MORNING', 'AFTERNOON', 'EVENING', 'WEEKEND'];
 
-// ─── GET PROFILE ─────────────────────────────────────────────────────────────
+// ─── GET PROFILE 
 
 const getDetailedProfileService = async (userId) => {
     try {
@@ -31,7 +31,7 @@ const getDetailedProfileService = async (userId) => {
     }
 };
 
-// ─── SECTION 1: ADDRESS ──────────────────────────────────────────────────────
+// ─── SECTION 1: ADDRESS 
 
 const updateUserAddressService = async (userId, { province_code, ward_code, detail_address }) => {
     try {

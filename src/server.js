@@ -19,11 +19,14 @@ assertProductionBootstrapEnvironment();
 getRefreshCookieOptions();
 
 const app = express();
-const httpServer = createServer(app);
+// Tạo máy chủ HTTP để sử dụng với Socket.IO.
+const httpServer = createServer(app); 
 let io = null;
 let ready = false;
 let shuttingDown = false;
 
+//Proxy là một máy chủ trung gian giữa client và server, giúp bảo vệ server gốc, 
+// cải thiện hiệu suất và cung cấp các tính năng bổ sung như cân bằng tải, bộ nhớ đệm và bảo mật.
 const trustProxy = String(process.env.TRUST_PROXY || '').trim();
 if (trustProxy && !['false', '0'].includes(trustProxy.toLowerCase())) {
   const parsedTrustProxy = trustProxy.toLowerCase() === 'true'
@@ -57,16 +60,19 @@ app.get('/', (_req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
+// Đóng máy chủ HTTP
 const closeHttpServer = () => new Promise((resolve) => {
   if (!httpServer.listening) return resolve();
   return httpServer.close(() => resolve());
 });
 
+// Đóng máy chủ Socket.IO
 const closeSocketServer = () => new Promise((resolve) => {
   if (!io) return resolve();
   return io.close(() => resolve());
 });
 
+// Xử lý tín hiệu tắt máy chủ (SIGTERM, SIGINT) để thực hiện các bước dọn dẹp trước khi thoát.
 const shutdown = async (signal, exitCode = 0) => {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -96,6 +102,7 @@ const shutdown = async (signal, exitCode = 0) => {
 process.once('SIGTERM', () => shutdown('SIGTERM'));
 process.once('SIGINT', () => shutdown('SIGINT'));
 
+// Khởi động máy chủ HTTP, kết nối cơ sở dữ liệu, khởi tạo ví hệ thống và các công việc định kỳ.
 const start = async () => {
   await initDatabase();
   const walletSummary = await initializeSystemWallets();

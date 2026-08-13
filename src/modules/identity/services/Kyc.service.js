@@ -22,6 +22,7 @@ class KycSubmissionError extends Error {
   }
 }
 
+// Hàm check định dạng ảnh
 const hasValidImageSignature = (file) => {
   const buffer = file?.buffer;
   if (!Buffer.isBuffer(buffer)) return false;
@@ -35,6 +36,7 @@ const hasValidImageSignature = (file) => {
   return false;
 };
 
+// Hàm chuẩn hóa file 
 const normalizeFiles = (role, files = {}) => {
   const requiredTypes = KYC_REQUIRED_DOCUMENTS[role];
   if (!requiredTypes) {
@@ -67,6 +69,7 @@ const normalizeFiles = (role, files = {}) => {
   return normalized;
 };
 
+// Hàm kiểm tra điều kiện nộp KYC
 const assertSubmissionEligibility = (user, expectedRole) => {
   if (!user) throw new KycSubmissionError('User not found.', 404, 'KYC_USER_NOT_FOUND');
   if (!user.is_active) throw new KycSubmissionError('User account is inactive.', 403, 'ACCOUNT_INACTIVE');
@@ -84,6 +87,7 @@ const assertSubmissionEligibility = (user, expectedRole) => {
   }
 };
 
+// Hàm dọn dẹp các ảnh đã upload nếu có lỗi xảy ra
 const cleanupUploadedAssets = async (assets, correlationId) => {
   for (const asset of assets) {
     try {
@@ -98,6 +102,7 @@ const cleanupUploadedAssets = async (assets, correlationId) => {
   }
 };
 
+// Hàm chính để nộp KYC
 const submitKycService = async ({ userId, role, files, correlationId }) => {
   const normalizedFiles = normalizeFiles(role, files);
   const submissionId = crypto.randomUUID();
@@ -151,6 +156,8 @@ const submitKycService = async ({ userId, role, files, correlationId }) => {
     await transaction.commit();
 
     try {
+      // Gửi thông báo thời gian thực đến tất cả các socket của vai trò ADMIN 
+      // về việc cập nhật hàng đợi KYC.
       emitToRole('ADMIN', KYC_REALTIME_EVENTS.ADMIN_QUEUE_UPDATED, {
         event_id: crypto.randomUUID(),
         occurred_at: new Date().toISOString(),

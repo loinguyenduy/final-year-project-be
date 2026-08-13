@@ -15,6 +15,7 @@ import {
   validatePassword
 } from '../constants/password.constants.js';
 
+// Dùng để ném ra lỗi tùy chỉnh cho các hành động liên quan đến mật khẩu (reset, set, change)
 class PasswordActionError extends Error {
   constructor(message, status = 400, code = 'VALIDATION_ERROR') {
     super(message);
@@ -24,7 +25,8 @@ class PasswordActionError extends Error {
   }
 }
 
-const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase(); 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
 const newToken = () => crypto.randomBytes(32).toString('hex');
 const genericForgotResult = () => ({
@@ -34,6 +36,8 @@ const genericForgotResult = () => ({
   DT: ''
 });
 
+// Hàm này được sử dụng để cố gắng thu hồi một token hành động mật khẩu chưa được sử dụng, 
+// nhưng không ném lỗi nếu thất bại. Nó ghi lại lỗi vào nhật ký để theo dõi sự cố mà không làm gián đoạn luồng chính.
 const revokeTokenBestEffort = async (id, context = {}) => {
   try {
     await PasswordActionToken.update(
@@ -50,6 +54,7 @@ const revokeTokenBestEffort = async (id, context = {}) => {
   }
 };
 
+// Hàm này được sử dụng để phát hành một token hành động mật khẩu mới cho user
 const issuePasswordAction = async ({ userId, purpose }) => {
   const transaction = await db.transaction();
   try {
@@ -111,6 +116,7 @@ const issuePasswordAction = async ({ userId, purpose }) => {
   }
 };
 
+//
 const requestPasswordReset = async ({ email, correlationId }) => {
   const normalized = normalizeEmail(email);
   const user = normalized ? await User.findOne({ where: { email: normalized } }) : null;

@@ -21,6 +21,7 @@ const parseBoolean = (value) => {
 
 const handleCreateJob = async (req, res) => {
     try {
+        
         const rejectCreate = async (status, payload, operation = 'create_job_validation_rejected') => {
             if (req.files?.length) {
                 await cleanupUploadedJobImages(req.files, {
@@ -68,6 +69,7 @@ const handleCreateJob = async (req, res) => {
             return rejectCreate(400, { EM: "Invalid address_option. Must be 1, 2, or 3.", EC: 400, DT: "" });
         }
 
+        // Validate location input based on address option
         const locationValidation = validateJobLocationInput({
             addressOption: parsedAddressOption,
             gpsLat: gps_lat,
@@ -81,6 +83,7 @@ const handleCreateJob = async (req, res) => {
 
         const images = req.files ? req.files.map(file => file.path) : [];
 
+        // Create the job using 
         const result = await createJobService(userId, {
             service_id,
             issue_description,

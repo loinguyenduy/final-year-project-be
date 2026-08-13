@@ -123,6 +123,7 @@ const handleDiagnosisDecision = async (req, res) => {
   }
 };
 
+// Hàm xử lý khi người dùng muốn hủy bỏ phiên làm việc AI hiện tại.
 const handleAbandonSession = async (req, res) => {
   try {
     const result = await abandonSession({

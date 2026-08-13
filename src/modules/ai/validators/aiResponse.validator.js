@@ -67,6 +67,7 @@ const requireEnum = (value, allowed, field) => {
   return value;
 };
 
+// Validate dữ liệu phản hồi có cấu trúc từ Gemini, bao gồm kiểm object, field, enum, text, array 
 const validateAiStructuredResponse = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new AiError('Gemini returned an invalid response object.', 502, 'AI_RESPONSE_INVALID');
@@ -162,6 +163,7 @@ const FORBIDDEN_MARKETPLACE_CLAIMS = Object.freeze([
   /\b(?:vấn đề|sự cố|lỗi)\s+chắc chắn\s+(?:do|bởi|là)\b/iu
 ]);
 
+// Kiểm tra phản hồi từ Gemini để đảm bảo không chứa các tuyên bố về thị trường hoặc chẩn đoán bị cấm.
 const assertMarketplaceSafeResponse = (response) => {
   const visibleText = [
     response.assistant_message,

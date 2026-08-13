@@ -33,6 +33,7 @@ const actionForStatus = (status, role) => {
   return (role === 'CUSTOMER' ? customer : handyman)[status] || null;
 };
 
+
 const serializeOverviewJob = (job, reviewState, role) => ({
   job_id: job.id,
   service: job.Service ? { service_id: job.Service.id, name: job.Service.name } : null,
@@ -52,6 +53,7 @@ const getRoleJobs = async (user, { recentLimit = 5 } = {}) => {
   return Job.findAll({ where: { selected_handyman_id: user.id }, include: [{ model: Service, attributes: ['id', 'name'], required: false }], order: [['updatedAt', 'DESC'], ['id', 'DESC']], limit: recentLimit });
 };
 
+// Hàm dùng để lấy thông tin tổng quan  của người dùng dựa trên vai trò và trạng thái công việc.
 const getOverview = async (user) => {
   const ownerWhere = user.role === 'CUSTOMER' ? { customer_id: user.id } : { selected_handyman_id: user.id };
   const [statusRows, recentJobs, walletData, rating, activeBidCount, availableCount, profile] = await Promise.all([
@@ -90,6 +92,7 @@ const getOverview = async (user) => {
   };
 };
 
+// Hàm dùng để lấy thông tin hồ sơ người dùng chính xác (canonical profile) dựa trên userId. 
 const getCanonicalProfile = async (userId) => {
   const user = await User.findByPk(userId, { attributes: ['id', 'full_name', 'email', 'phone_number', 'role', 'is_active', 'avatar_url', 'is_email_verified', 'kyc_status', 'createdAt'] });
   if (!user) return null;

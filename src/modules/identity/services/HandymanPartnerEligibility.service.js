@@ -14,6 +14,7 @@ const isOfficialHandymanPartner = ({ user, profile }) => Boolean(
   && profile.security_bond_status === OFFICIAL_HANDYMAN_BOND_STATUS
 );
 
+
 const getOfficialHandymanPartnerEligibility = async (userId, queryOptions = {}) => {
   const [user, profile] = await Promise.all([
     User.findByPk(userId, {

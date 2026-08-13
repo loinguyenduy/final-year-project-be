@@ -17,9 +17,7 @@ import {
     buildSafeAiPriceGuidance
 } from '../../ai/services/AiJobIntegration.service.js';
 
-// Work time check in Vietnam timezone (UTC+7)
-// Returns true if the job's scheduled time falls in any of the handyman's preferred slots.
-// Jobs with null scheduled_at (flexible timing) always pass.
+// Hàm này lọc các công việc dựa trên thời gian làm việc ưu tiên của thợ sửa chữa. 
 const matchesWorkTime = (scheduledAt, preferred_work_times) => {
     if (!scheduledAt) return true;
     if (!preferred_work_times || preferred_work_times.length === 0) return true;
@@ -38,6 +36,8 @@ const matchesWorkTime = (scheduledAt, preferred_work_times) => {
     return false;
 };
 
+// Hàm lấy danh sách các công việc có sẵn cho một thợ sửa chữa cụ thể, 
+// dựa trên các tiêu chí như dịch vụ, khu vực, thời gian làm việc và tìm kiếm.
 const getAvailableJobsForHandymanService = async (handymanId, {
     search = '',
     service_id = '',
@@ -76,7 +76,7 @@ const getAvailableJobsForHandymanService = async (handymanId, {
             andConditions.push({ id: { [Op.notIn]: cancelledJobIds } });
         }
 
-        // Specialty filter — explicit service_id param overrides profile specialties
+        // Lọc theo dịch vụ: nếu service_id được cung cấp, chỉ lấy công việc với service_id đó;
         if (service_id) {
             andConditions.push({ service_id });
         } else if (serviceIds.length > 0) {
@@ -98,7 +98,8 @@ const getAvailableJobsForHandymanService = async (handymanId, {
             andConditions.push({ [Op.or]: areaOrConditions });
         }
 
-        // Step 3: Fetch matching jobs
+        // Step 3: Hiển thị các công việc dựa trên các điều kiện đã xây dựng, bao gồm cả thông tin liên quan đến dịch vụ, 
+        // khách hàng, khu vực và gợi ý giá AI (nếu có).
         const jobs = await Job.findAll({
             where: { [Op.and]: andConditions },
             attributes: {
@@ -141,7 +142,8 @@ const getAvailableJobsForHandymanService = async (handymanId, {
             order: [['createdAt', 'DESC']]
         });
 
-        // Step 4: Post-process — distance, work time filter (JS), address masking, search
+        // Step 4: Xu lý dữ liệu job để thêm thông tin khoảng cách, 
+        // ẩn thông tin nhạy cảm và lọc theo thời gian làm việc ưu tiên cũng như từ khóa tìm kiếm.
         const searchLower = search.toLowerCase();
 
         const processed = jobs
@@ -151,7 +153,7 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                 delete data.AiPriceSuggestion;
                 if (safeAiGuidance) data.ai_price_guidance = safeAiGuidance;
 
-                // Distance
+                // Distance: tính toán khoảng cách từ vị trí hiện tại của thợ sửa chữa đến vị trí công việc (nếu có GPS)
                 if (current_lat != null && current_long != null && data.gps_lat != null && data.gps_long != null) {
                     data.distance_km = calculateDistanceKm(
                         current_lat,
@@ -163,7 +165,8 @@ const getAvailableJobsForHandymanService = async (handymanId, {
                     data.distance_km = null;
                 }
 
-                // Mask precise location for POSTED/BIDDING to prevent off-platform contact
+                // nếu công việc đang ở trạng thái POSTED hoặc BIDDING, ẩn thông tin địa chỉ chi tiết và GPS để bảo vệ 
+                // quyền riêng tư của khách hàng.
                 if (['POSTED', 'BIDDING'].includes(data.current_status)) {
                     data.detail_address = null;
                     data.gps_lat = null;
@@ -178,9 +181,9 @@ const getAvailableJobsForHandymanService = async (handymanId, {
 
                 return data;
             })
-            // Work time filter in JS (reliable, avoids db.literal timezone complexities)
+            // Filter: loại bỏ các công việc không phù hợp với thời gian làm việc ưu tiên của thợ sửa chữa
             .filter(data => matchesWorkTime(data.scheduled_at, preferred_work_times))
-            // Search: across issue description and service name
+            // Filter: loại bỏ các công việc không phù hợp với từ khóa tìm kiếm (mô tả công việc hoặc tên dịch vụ)
             .filter(data => {
                 if (!search) return true;
                 const matchesDesc = data.issue_description?.toLowerCase().includes(searchLower);
@@ -201,11 +204,14 @@ const getAvailableJobsForHandymanService = async (handymanId, {
         processed.sort((a, b) => {
             switch (effectiveSortBy) {
                 case 'distance':
+                    // Nếu job không có GPS, đặt nó ở cuối danh sách. Nếu cả hai đều không có GPS, sắp xếp theo ngày tạo.
                     if (a.distance_km === null && b.distance_km === null) {
                         return new Date(b.createdAt) - new Date(a.createdAt);
                     }
+                    // Nếu chỉ một trong hai job không có GPS, đặt job đó ở cuối danh sách.
                     if (a.distance_km === null) return 1;
                     if (b.distance_km === null) return -1;
+                    
                     return (a.distance_km - b.distance_km)
                         || (new Date(b.createdAt) - new Date(a.createdAt));
                 case 'budget_desc':

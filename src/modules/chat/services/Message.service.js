@@ -45,6 +45,8 @@ const buildMessageDto = ({
   };
 };
 
+// gửi tin nhắn trong một cuộc trò chuyện cụ thể.
+//  Nó nhận vào conversationId, senderId, clientMessageId và content của tin nhắn.
 const sendMessageService = async ({
   conversationId,
   senderId,

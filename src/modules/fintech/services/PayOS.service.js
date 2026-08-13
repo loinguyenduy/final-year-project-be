@@ -168,6 +168,7 @@ const createTopUpLinkService = async (userId, amount, targetWallet = 'MAIN') => 
   }
 };
 
+// Xử lý webhook từ PayOS để xác nhận trạng thái thanh toán và cập nhật giao dịch tương ứng
 const handlePayOSWebhookService = async (webhookData) => {
   try {
     const payOSInstance = getPayOSInstance();
@@ -199,6 +200,7 @@ const handlePayOSWebhookService = async (webhookData) => {
   }
 };
 
+//trích xuất orderCode từ queryParams
 const getPayOSOrderCode = (queryParams) => {
   const orderCode = queryParams?.orderCode || queryParams?.order_code;
   if (!orderCode || Number.isNaN(Number(orderCode))) {
@@ -207,6 +209,7 @@ const getPayOSOrderCode = (queryParams) => {
   return Number(orderCode);
 };
 
+// Hàm handlePayOSReturnService xử lý callback từ PayOS sau khi người dùng hoàn tất thanh toán, xác nhận trạng thái thanh toán và cập nhật giao dịch tương ứng
 const handlePayOSReturnService = async (queryParams) => {
   try {
     const payOSInstance = getPayOSInstance();

@@ -5,6 +5,7 @@ const parseBoolean = (value, fallback) => {
   throw new Error('COOKIE_SECURE must be true or false.');
 };
 
+
 const parseMaxAge = () => {
   const raw = process.env.COOKIE_REFRESH_MAX_AGE_MS
     ?? process.env.COOKIE_REFRESH_MAX_AGE
@@ -16,6 +17,7 @@ const parseMaxAge = () => {
   return Math.floor(parsed);
 };
 
+// Lấy các tùy chọn cookie cho refresh token dựa trên các biến môi trường và cài đặt mặc định.
 const getRefreshCookieOptions = () => {
   const isProduction = String(process.env.NODE_ENV || 'development').toLowerCase() === 'production';
   const sameSite = String(process.env.COOKIE_SAME_SITE || 'strict').toLowerCase();
@@ -23,11 +25,12 @@ const getRefreshCookieOptions = () => {
     throw new Error('COOKIE_SAME_SITE must be strict, lax, or none.');
   }
 
+  // Nếu sameSite là 'none', cookie phải được đánh dấu là secure.
   const secure = parseBoolean(process.env.COOKIE_SECURE, isProduction);
   if (sameSite === 'none' && !secure) {
     throw new Error('COOKIE_SECURE must be true when COOKIE_SAME_SITE is none.');
   }
-
+// Tạo các tùy chọn cookie cho refresh token dựa trên các biến môi trường và cài đặt mặc định.
   const options = {
     httpOnly: true,
     secure,
@@ -45,6 +48,7 @@ const getRefreshCookieClearOptions = () => {
   return { ...options, httpOnly: true };
 };
 
+// Hàm để đặt cookie refresh token trong phản hồi HTTP.
 const setRefreshCookie = (res, refreshToken) => {
   res.cookie('refreshToken', refreshToken, getRefreshCookieOptions());
 };

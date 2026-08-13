@@ -144,17 +144,19 @@ const decideSessionPrice = async ({
       return { estimateUnavailable: true };
     }
 
+    // Xác định ngân sách được chọn dựa trên hành động của khách hàng
     let selectedBudget;
     if (body.action === 'ACCEPT_SUGGESTION') {
       selectedBudget = {
         budget_min: session.latest_estimate.suggested_min_amount,
-        budget_max: session.latest_estimate.suggested_max_amount
+        budget_max: session.latest_estimate.suggested_max_amount 
       };
     } else if (body.action === 'USE_OWN_BUDGET') {
       selectedBudget = ownBudget;
     } else {
       selectedBudget = { budget_min: null, budget_max: null };
     }
+    // Cập nhật phiên làm việc với quyết định của khách hàng và lưu trữ ngân sách được chọn
     await session.update({
       status: 'DRAFT_READY',
       stage: 'DRAFT_READY',

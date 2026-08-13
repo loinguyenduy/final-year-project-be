@@ -3,6 +3,8 @@ const positiveInteger = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+// Định nghĩa các giá trị mặc định cho cấu hình AI.
+// Các giá trị này được sử dụng nếu không có giá trị tương ứng trong biến môi trường.
 const AI_DEFAULTS = Object.freeze({
   requestTimeoutMs: 20000,
   maxTurns: 8,
@@ -19,6 +21,7 @@ const AI_DEFAULTS = Object.freeze({
   maxContextMessages: 12
 });
 
+// Đọc cấu hình AI 
 const getAiConfig = () => ({
   apiKey: String(process.env.GEMINI_API_KEY || '').trim(),
   model: String(process.env.GEMINI_MODEL || '').trim(),

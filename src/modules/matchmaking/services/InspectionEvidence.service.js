@@ -50,6 +50,7 @@ const buildEvidenceDto = (evidence, { includeAudit = false } = {}) => ({
     } : {})
 });
 
+// 
 const ensureSelectedHandyman = (job, handymanId) => {
     if (job.selected_handyman_id !== handymanId) {
         return serviceError(

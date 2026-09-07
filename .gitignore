@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.example
 
 # Build output
 dist/
@@ -25,3 +26,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+docs/
+dist/
+
+.gitignore

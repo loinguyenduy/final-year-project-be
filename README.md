@@ -16,9 +16,9 @@ Trusted Handyman supports three roles: Customers request home services, Handymen
 
 | Role | Email | Password | Login |
 | --- | --- | --- | --- |
-| Customer | `Confirm approved demo email before publishing` | `123456` | [Customer login](https://trusted-handyman.vercel.app/login) |
-| Handyman | `Confirm approved demo email before publishing` | `123456` | [Handyman login](https://trusted-handyman.vercel.app/login) |
-| Admin | `Confirm approved demo email before publishing` | `123456` | [Admin login](https://trusted-handyman.vercel.app/admin/login) |
+| Customer | `customer.demo@gmail.com` | `123456` | [Customer login](https://trusted-handyman.vercel.app/login) |
+| Handyman | `handyman.demo@gmail.com` | `123456` | [Handyman login](https://trusted-handyman.vercel.app/login) |
+| Admin | `admin.demo@gmail.com` | `123456` | [Admin login](https://trusted-handyman.vercel.app/admin/login) |
 
 > These are evaluation-only accounts using fake, disposable data. Demo data may be reset or changed without notice.
 

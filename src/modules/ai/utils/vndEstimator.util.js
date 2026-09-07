@@ -21,6 +21,7 @@ const median = (sorted) => {
   return (sorted[midpoint - 1] + sorted[midpoint] + 1n) / 2n;
 };
 
+
 const removeOutliers = (sorted, minimumSamples) => {
   if (sorted.length < 8) return { values: sorted, removed: 0, usedFence: false };
   const q1 = nearestRank(sorted, 25);

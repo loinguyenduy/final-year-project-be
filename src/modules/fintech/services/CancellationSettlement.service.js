@@ -55,7 +55,7 @@ const settleCancellationFundsInTransaction = async ({
     return settlementError('Cancellation financial distribution is inconsistent.', 409, 'FINANCIAL_DATA_INCONSISTENT');
   }
 
-  // Lock cố định
+  // KHóa wallet sort theo id 
   const wallets = await Wallet.findAll({
     where: {
       [Op.or]: [

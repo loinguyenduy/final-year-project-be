@@ -96,6 +96,7 @@ const scoreHistoricalDescription = (components, historicalDescription) => {
   );
 };
 
+// Chuyển structured thành token
 const rankHistoricalCandidates = (candidates, currentState) => {
   const components = buildCurrentTokenComponents({
     issueDescription: currentState.issue_description,

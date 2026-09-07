@@ -77,6 +77,7 @@ const loadRequiredWallets = async (job, transaction, walletTypes) => {
                     : { user_id: job.selected_handyman_id, wallet_type: walletType }
             ))
         },
+        // KHóa wallet sort theo id
         order: [['id', 'ASC']],
         transaction,
         lock: transaction.LOCK.UPDATE

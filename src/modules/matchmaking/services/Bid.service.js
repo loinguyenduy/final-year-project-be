@@ -131,7 +131,6 @@ const submitBidService = async (handymanId, jobId, bidData) => {
                     new_status: 'BIDDING'
                 }, { transaction: t });
             }
-
             await t.commit();
             emitBidEvent({
                 event: JOB_LIFECYCLE_EVENTS.BID_SUBMITTED,
